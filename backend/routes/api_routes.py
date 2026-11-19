@@ -4,6 +4,7 @@ from flask import Blueprint, current_app, jsonify, request
 from database.db import db
 from models.db_models import Animal, Disease, Prediction
 from services.prediction_service import predict_disease_from_image
+from services.symptom_service import analyze_symptoms, resolve_symptom_ids
 from services.upload_service import validate_and_save_image
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -273,41 +274,36 @@ def submit_symptoms():
     if not isinstance(symptoms, list) or len(symptoms) == 0:
         return jsonify({"error": "Please select at least one observed symptom."}), 400
 
-    cleaned_symptoms = [str(s).strip() for s in symptoms if str(s).strip()]
-    if not cleaned_symptoms:
-        return jsonify({"error": "Please select at least one valid symptom."}), 400
+    resolved_ids, resolved_labels, err_msg = resolve_symptom_ids(animal_id, symptoms)
+    if err_msg:
+        return jsonify({"error": err_msg}), 400
 
-    valid_for_animal = {
-        s["id"]: s["label"]
-        for s in SYMPTOMS_DATA
-        if animal_id in s["animals"]
-    }
-    valid_labels_for_animal = set(valid_for_animal.values())
+    analysis = analyze_symptoms(animal_id, resolved_ids)
 
-    resolved_labels = []
-    for item in cleaned_symptoms:
-        if item in valid_for_animal:
-            resolved_labels.append(valid_for_animal[item])
-        elif item in valid_labels_for_animal:
-            resolved_labels.append(item)
-        else:
-            return jsonify({
-                "error": f"Symptom '{item}' is not applicable to {animal_id.capitalize()}."
-            }), 400
-
-    animal_name = animal_id.capitalize()
-    summary = (
-        f"Recorded {len(resolved_labels)} observed symptom(s) for {animal_name}. "
-        "Full rule-based condition matching will evaluate these symptoms in Week 3."
-    )
+    save_history_flag = data.get("saveHistory", True) is not False
+    saved_record = None
+    if save_history_flag:
+        image_pred_text = (
+            "No image uploaded (Symptom-only check)"
+            if animal_id in AI_SUPPORTED_ANIMALS
+            else f"AI Image Detection unavailable for {analysis['animal']}"
+        )
+        record = Prediction(
+            animal=analysis["animal"],
+            image_path=None,
+            selected_symptoms_json=json.dumps(resolved_labels),
+            image_prediction=image_pred_text,
+            confidence=analysis["matchScorePercent"],
+            symptom_analysis=f"{analysis['topCondition']} ({analysis['matchLevel']} - {analysis['matchScorePercent']}%)"
+        )
+        db.session.add(record)
+        db.session.commit()
+        saved_record = record.to_dict()
 
     return jsonify({
-        "message": "Symptoms validated and received by backend.",
-        "animalId": animal_id,
-        "animal": animal_name,
-        "selectedSymptoms": resolved_labels,
-        "symptomCount": len(resolved_labels),
-        "symptomAnalysis": summary
+        "message": "Symptom rule analysis completed.",
+        **analysis,
+        "record": saved_record
     }), 200
 
 

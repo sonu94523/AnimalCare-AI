@@ -166,7 +166,12 @@ function SymptomChecker() {
             : `AI Image Detection unavailable for ${currentAnimal.name}`,
           confidence: null,
           symptoms: response.selectedSymptoms || selectedSymptoms,
-          symptomAnalysis: response.symptomAnalysis
+          symptomTopCondition: response.topCondition,
+          symptomMatchScore: response.matchScorePercent,
+          symptomMatchLevel: response.matchLevel,
+          matchedConditions: response.matchedConditions || [],
+          symptomAnalysis: response.symptomAnalysis,
+          preventionTips: response.preventionTips
         }
       })
     } catch (err) {

@@ -90,15 +90,37 @@ function Results() {
           )}
 
           <div className="result-box">
+            {resultData.symptomTopCondition && (
+              <p>
+                <strong>Rule-Based Symptom Match:</strong> {resultData.symptomTopCondition}{' '}
+                {resultData.symptomMatchScore !== undefined && resultData.symptomMatchScore !== null
+                  ? `(${resultData.symptomMatchScore}% — ${resultData.symptomMatchLevel || 'Rule Match'})`
+                  : ''}
+              </p>
+            )}
             <p>
               <strong>Screening & Symptom Analysis:</strong>{' '}
               {resultData.symptomAnalysis
                 ? resultData.symptomAnalysis
                 : resultData.symptoms && resultData.symptoms.length > 0
-                ? 'Preliminary symptom match (Full rule engine connects in Week 3)'
+                ? 'Preliminary symptom match evaluated against clinical rules'
                 : 'No symptoms provided for analysis'}
             </p>
           </div>
+
+          {Array.isArray(resultData.matchedConditions) && resultData.matchedConditions.length > 0 && (
+            <div className="result-subsection" style={{ marginBottom: '1rem' }}>
+              <h4>Rule-Based Condition Matches</h4>
+              <ul className="result-list">
+                {resultData.matchedConditions.map((cond) => (
+                  <li key={cond.conditionId}>
+                    <strong>{cond.conditionName}:</strong> {cond.matchScorePercent}% match (
+                    {cond.matchedSymptomCount} symptom{cond.matchedSymptomCount === 1 ? '' : 's'})
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           <div className="result-subsection">
             <h4>Basic Preventive Guidance</h4>
