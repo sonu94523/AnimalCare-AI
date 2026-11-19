@@ -1,0 +1,80 @@
+{
+  "model_name": "AnimalCare_MobileNetV2",
+  "backbone": "MobileNetV2",
+  "framework_backend": "pytorch",
+  "dataset_sizes": {
+    "train_samples": 24,
+    "val_samples": 6
+  },
+  "class_names": [
+    "healthy",
+    "lumpy_skin_disease",
+    "foot_and_mouth_disease"
+  ],
+  "weights_file": "mobilenetv2_animalcare.pt",
+  "epochs_completed": 8,
+  "batch_size": 8,
+  "learning_rate": 0.001,
+  "best_epoch": 8,
+  "best_val_accuracy": 100.0,
+  "final_train_accuracy": 91.67,
+  "final_val_accuracy": 100.0,
+  "history": [
+    {
+      "epoch": 1,
+      "train_loss": 1.0212,
+      "train_accuracy": 41.67,
+      "val_loss": 0.8044,
+      "val_accuracy": 83.33
+    },
+    {
+      "epoch": 2,
+      "train_loss": 0.7222,
+      "train_accuracy": 91.67,
+      "val_loss": 0.5714,
+      "val_accuracy": 100.0
+    },
+    {
+      "epoch": 3,
+      "train_loss": 0.5621,
+      "train_accuracy": 79.17,
+      "val_loss": 0.3944,
+      "val_accuracy": 100.0
+    },
+    {
+      "epoch": 4,
+      "train_loss": 0.3847,
+      "train_accuracy": 87.5,
+      "val_loss": 0.3017,
+      "val_accuracy": 100.0
+    },
+    {
+      "epoch": 5,
+      "train_loss": 0.3833,
+      "train_accuracy": 87.5,
+      "val_loss": 0.2229,
+      "val_accuracy": 100.0
+    },
+    {
+      "epoch": 6,
+      "train_loss": 0.2181,
+      "train_accuracy": 91.67,
+      "val_loss": 0.2036,
+      "val_accuracy": 83.33
+    },
+    {
+      "epoch": 7,
+      "train_loss": 0.2376,
+      "train_accuracy": 91.67,
+      "val_loss": 0.2351,
+      "val_accuracy": 83.33
+    },
+    {
+      "epoch": 8,
+      "train_loss": 0.1851,
+      "train_accuracy": 91.67,
+      "val_loss": 0.1087,
+      "val_accuracy": 100.0
+    }
+  ]
+}

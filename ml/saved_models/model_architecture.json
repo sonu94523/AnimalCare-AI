@@ -27,7 +27,7 @@
     "lumpy_skin_disease": "Lumpy Skin Disease (LSD)",
     "foot_and_mouth_disease": "Foot-and-Mouth Disease (FMD)"
   },
-  "freeze_base": true,
+  "freeze_base": false,
   "custom_head": [
     {
       "layer": "GlobalAveragePooling2D",
@@ -54,8 +54,8 @@
     "loss": "categorical_crossentropy"
   },
   "parameters": {
-    "total_params": 2388227,
-    "trainable_params": 164355,
-    "frozen_params": 2223872
+    "total_params": 2458627,
+    "trainable_params": 1120835,
+    "frozen_params": 1337792
   }
 }

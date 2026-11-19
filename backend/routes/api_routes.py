@@ -7,6 +7,7 @@ from services.upload_service import validate_and_save_image
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 MODEL_ARCH_PATH = os.path.join(PROJECT_ROOT, "ml", "saved_models", "model_architecture.json")
+TRAINING_HISTORY_PATH = os.path.join(PROJECT_ROOT, "ml", "saved_models", "training_history.json")
 
 api_bp = Blueprint("api", __name__, url_prefix="/api")
 
@@ -316,16 +317,20 @@ def get_diseases():
 
 @api_bp.route("/model/info", methods=["GET"])
 def get_model_info():
-    if os.path.isfile(MODEL_ARCH_PATH):
-        with open(MODEL_ARCH_PATH, "r", encoding="utf-8") as f:
-            return jsonify(json.load(f))
-    return jsonify({
+    payload = {
         "model_name": "AnimalCare_MobileNetV2",
         "backbone": "MobileNetV2",
         "input_shape": [224, 224, 3],
         "num_classes": 3,
         "class_names": ["healthy", "lumpy_skin_disease", "foot_and_mouth_disease"]
-    })
+    }
+    if os.path.isfile(MODEL_ARCH_PATH):
+        with open(MODEL_ARCH_PATH, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+    if os.path.isfile(TRAINING_HISTORY_PATH):
+        with open(TRAINING_HISTORY_PATH, "r", encoding="utf-8") as f:
+            payload["training_history"] = json.load(f)
+    return jsonify(payload)
 
 
 @api_bp.route("/upload", methods=["POST"])
