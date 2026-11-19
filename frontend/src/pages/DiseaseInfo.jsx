@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { fetchDiseases } from '../services/api'
+import { fetchDiseases, fetchModelInfo } from '../services/api'
 
 const SUPPORTED_DISEASES = [
   {
@@ -65,6 +65,8 @@ const SUPPORTED_DISEASES = [
 
 function DiseaseInfo() {
   const [diseases, setDiseases] = useState(SUPPORTED_DISEASES)
+  const [modelInfo, setModelInfo] = useState(null)
+  const [searchTerm, setSearchTerm] = useState('')
 
   useEffect(() => {
     let mounted = true
@@ -77,10 +79,31 @@ function DiseaseInfo() {
       .catch(() => {
         // Fallback to SUPPORTED_DISEASES
       })
+
+    fetchModelInfo()
+      .then((info) => {
+        if (mounted && info) {
+          setModelInfo(info)
+        }
+      })
+      .catch(() => {
+        // Optional model metadata
+      })
+
     return () => {
       mounted = false
     }
   }, [])
+
+  const filteredDiseases = diseases.filter((d) => {
+    if (!searchTerm.trim()) return true
+    const q = searchTerm.toLowerCase()
+    return (
+      d.name.toLowerCase().includes(q) ||
+      (d.affectedAnimals || '').toLowerCase().includes(q) ||
+      (d.causes || '').toLowerCase().includes(q)
+    )
+  })
 
   return (
     <div className="page-container">
@@ -91,8 +114,37 @@ function DiseaseInfo() {
         </p>
       </div>
 
+      {modelInfo && (
+        <div className="form-card" style={{ marginBottom: '1.5rem' }}>
+          <h3 style={{ marginTop: 0 }}>MobileNetV2 Transfer Learning Model Summary</h3>
+          <p className="result-muted" style={{ marginBottom: '0.75rem' }}>
+            Backbone: <strong>{modelInfo.backbone}</strong> | Input Shape:{' '}
+            <strong>{(modelInfo.input_shape || [224, 224, 3]).join(' × ')} RGB</strong> | Supported AI Animals:{' '}
+            <strong>Cow, Buffalo</strong>
+          </p>
+          {modelInfo.evaluation_metrics && (
+            <p style={{ margin: 0 }}>
+              <strong>Test Set Accuracy:</strong> {modelInfo.evaluation_metrics.accuracy_percent}% |{' '}
+              <strong>Macro F1-Score:</strong> {modelInfo.evaluation_metrics.macro_avg?.f1_score}% |{' '}
+              <strong>Low-Confidence Threshold:</strong>{' '}
+              {modelInfo.evaluation_metrics.confidence_summary?.low_confidence_threshold_percent || 60}%
+            </p>
+          )}
+        </div>
+      )}
+
+      <div className="form-group" style={{ marginBottom: '1.25rem' }}>
+        <input
+          type="text"
+          className="form-select"
+          placeholder="Search condition by name, animal, or cause..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+        />
+      </div>
+
       <div className="disease-list">
-        {diseases.map((disease) => (
+        {filteredDiseases.map((disease) => (
           <div key={disease.id} className="disease-card">
             <div className="disease-card-header">
               <h2>{disease.name}</h2>

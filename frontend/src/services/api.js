@@ -39,9 +39,25 @@ export async function fetchDiseases() {
   return response.data.diseases
 }
 
-export async function fetchHistory() {
-  const response = await apiClient.get('/api/history')
+export async function fetchHistory(animalFilter = '') {
+  const params = animalFilter && animalFilter !== 'all' ? { animal: animalFilter } : {}
+  const response = await apiClient.get('/api/history', { params })
   return response.data.records
+}
+
+export async function deleteHistoryRecord(recordId) {
+  const response = await apiClient.delete(`/api/history/${recordId}`)
+  return response.data
+}
+
+export async function clearAllHistory() {
+  const response = await apiClient.delete('/api/history')
+  return response.data
+}
+
+export async function fetchModelInfo() {
+  const response = await apiClient.get('/api/model/info')
+  return response.data
 }
 
 export async function savePredictionRecord(payload) {

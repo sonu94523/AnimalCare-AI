@@ -524,8 +524,42 @@ def predict_combined_endpoint():
 
 @api_bp.route("/history", methods=["GET"])
 def get_history():
-    records = Prediction.query.order_by(Prediction.created_at.desc(), Prediction.id.desc()).all()
-    return jsonify({"records": [r.to_dict() for r in records]})
+    animal_filter = (request.args.get("animal") or "").strip().lower()
+    query = Prediction.query
+    if animal_filter and animal_filter != "all":
+        query = query.filter(db.func.lower(Prediction.animal) == animal_filter)
+
+    records = query.order_by(Prediction.created_at.desc(), Prediction.id.desc()).all()
+    return jsonify({
+        "totalCount": len(records),
+        "records": [r.to_dict() for r in records]
+    })
+
+
+@api_bp.route("/history/<int:record_id>", methods=["GET"])
+def get_history_record(record_id):
+    record = db.session.get(Prediction, record_id)
+    if not record:
+        return jsonify({"error": "Prediction record not found."}), 404
+    return jsonify({"record": record.to_dict()}), 200
+
+
+@api_bp.route("/history/<int:record_id>", methods=["DELETE"])
+def delete_history_record(record_id):
+    record = db.session.get(Prediction, record_id)
+    if not record:
+        return jsonify({"error": "Prediction record not found."}), 404
+
+    db.session.delete(record)
+    db.session.commit()
+    return jsonify({"message": f"Prediction record #{record_id} deleted.", "deletedId": record_id}), 200
+
+
+@api_bp.route("/history", methods=["DELETE"])
+def clear_all_history():
+    deleted_count = Prediction.query.delete()
+    db.session.commit()
+    return jsonify({"message": "All prediction history records cleared.", "deletedCount": deleted_count}), 200
 
 
 @api_bp.route("/history", methods=["POST"])
