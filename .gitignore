@@ -28,6 +28,7 @@ ml/saved_models/*
 !ml/saved_models/.gitkeep
 !ml/saved_models/model_architecture.json
 !ml/saved_models/training_history.json
+!ml/saved_models/evaluation_metrics.json
 
 # Environment variables & IDE
 .env

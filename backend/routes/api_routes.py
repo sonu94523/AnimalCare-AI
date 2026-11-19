@@ -8,6 +8,7 @@ from services.upload_service import validate_and_save_image
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 MODEL_ARCH_PATH = os.path.join(PROJECT_ROOT, "ml", "saved_models", "model_architecture.json")
 TRAINING_HISTORY_PATH = os.path.join(PROJECT_ROOT, "ml", "saved_models", "training_history.json")
+EVALUATION_METRICS_PATH = os.path.join(PROJECT_ROOT, "ml", "saved_models", "evaluation_metrics.json")
 
 api_bp = Blueprint("api", __name__, url_prefix="/api")
 
@@ -330,6 +331,9 @@ def get_model_info():
     if os.path.isfile(TRAINING_HISTORY_PATH):
         with open(TRAINING_HISTORY_PATH, "r", encoding="utf-8") as f:
             payload["training_history"] = json.load(f)
+    if os.path.isfile(EVALUATION_METRICS_PATH):
+        with open(EVALUATION_METRICS_PATH, "r", encoding="utf-8") as f:
+            payload["evaluation_metrics"] = json.load(f)
     return jsonify(payload)
 
 

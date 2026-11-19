@@ -1,0 +1,73 @@
+{
+  "model_name": "AnimalCare_MobileNetV2",
+  "backbone": "MobileNetV2",
+  "framework_backend": "pytorch",
+  "evaluated_split": "test",
+  "weights_loaded": true,
+  "total_samples": 6,
+  "accuracy_percent": 100.0,
+  "macro_avg": {
+    "precision": 100.0,
+    "recall": 100.0,
+    "f1_score": 100.0
+  },
+  "weighted_avg": {
+    "precision": 100.0,
+    "recall": 100.0,
+    "f1_score": 100.0
+  },
+  "per_class": {
+    "healthy": {
+      "display_name": "Healthy",
+      "precision": 100.0,
+      "recall": 100.0,
+      "f1_score": 100.0,
+      "support": 2
+    },
+    "lumpy_skin_disease": {
+      "display_name": "Lumpy Skin Disease (LSD)",
+      "precision": 100.0,
+      "recall": 100.0,
+      "f1_score": 100.0,
+      "support": 2
+    },
+    "foot_and_mouth_disease": {
+      "display_name": "Foot-and-Mouth Disease (FMD)",
+      "precision": 100.0,
+      "recall": 100.0,
+      "f1_score": 100.0,
+      "support": 2
+    }
+  },
+  "confusion_matrix": {
+    "labels": [
+      "healthy",
+      "lumpy_skin_disease",
+      "foot_and_mouth_disease"
+    ],
+    "matrix": [
+      [
+        2,
+        0,
+        0
+      ],
+      [
+        0,
+        2,
+        0
+      ],
+      [
+        0,
+        0,
+        2
+      ]
+    ]
+  },
+  "confidence_summary": {
+    "low_confidence_threshold_percent": 60.0,
+    "mean_confidence_percent": 85.06,
+    "min_confidence_percent": 57.44,
+    "max_confidence_percent": 99.95,
+    "low_confidence_count": 1
+  }
+}
