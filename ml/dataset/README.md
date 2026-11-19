@@ -1,4 +1,4 @@
-# AnimalCare AI – Dataset Organization (Day 6)
+# AnimalCare AI – Dataset Organization
 
 This directory contains the image dataset structure for training and evaluating the **MobileNetV2** transfer learning model on **Cow** and **Buffalo** disease images.
 

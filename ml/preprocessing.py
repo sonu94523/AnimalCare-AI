@@ -1,5 +1,5 @@
 """
-Day 6: Dataset Organization & Image Preprocessing Pipeline for MobileNetV2.
+Dataset Organization & Image Preprocessing Pipeline for MobileNetV2.
 
 Provides:
 1. Dataset directory initialization (`train/`, `val/`, `test/` across supported classes)
@@ -450,7 +450,7 @@ def load_split_arrays(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Day 6: AnimalCare AI Dataset Organization & MobileNetV2 Preprocessing"
+        description="AnimalCare AI Dataset Organization & MobileNetV2 Preprocessing"
     )
     parser.add_argument(
         "--dataset-dir",

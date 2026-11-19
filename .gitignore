@@ -26,6 +26,7 @@ ml/dataset/*
 !ml/dataset/class_indices.json
 ml/saved_models/*
 !ml/saved_models/.gitkeep
+!ml/saved_models/model_architecture.json
 
 # Environment variables & IDE
 .env

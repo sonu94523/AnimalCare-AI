@@ -1,8 +1,12 @@
 import json
+import os
 from flask import Blueprint, current_app, jsonify, request
 from database.db import db
 from models.db_models import Animal, Disease, Prediction
 from services.upload_service import validate_and_save_image
+
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+MODEL_ARCH_PATH = os.path.join(PROJECT_ROOT, "ml", "saved_models", "model_architecture.json")
 
 api_bp = Blueprint("api", __name__, url_prefix="/api")
 
@@ -308,6 +312,20 @@ def submit_symptoms():
 def get_diseases():
     diseases = Disease.query.order_by(Disease.id.asc()).all()
     return jsonify({"diseases": [d.to_dict() for d in diseases]})
+
+
+@api_bp.route("/model/info", methods=["GET"])
+def get_model_info():
+    if os.path.isfile(MODEL_ARCH_PATH):
+        with open(MODEL_ARCH_PATH, "r", encoding="utf-8") as f:
+            return jsonify(json.load(f))
+    return jsonify({
+        "model_name": "AnimalCare_MobileNetV2",
+        "backbone": "MobileNetV2",
+        "input_shape": [224, 224, 3],
+        "num_classes": 3,
+        "class_names": ["healthy", "lumpy_skin_disease", "foot_and_mouth_disease"]
+    })
 
 
 @api_bp.route("/upload", methods=["POST"])
