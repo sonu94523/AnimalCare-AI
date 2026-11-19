@@ -1,0 +1,21 @@
+{
+  "class_indices": {
+    "healthy": 0,
+    "lumpy_skin_disease": 1,
+    "foot_and_mouth_disease": 2
+  },
+  "class_display_names": {
+    "healthy": "Healthy",
+    "lumpy_skin_disease": "Lumpy Skin Disease (LSD)",
+    "foot_and_mouth_disease": "Foot-and-Mouth Disease (FMD)"
+  },
+  "supported_animals": [
+    "cow",
+    "buffalo"
+  ],
+  "image_size": [
+    224,
+    224
+  ],
+  "normalization": "mobilenet_v2 ([-1.0, 1.0])"
+}

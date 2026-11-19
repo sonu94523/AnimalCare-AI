@@ -77,8 +77,11 @@ function ImageDetection() {
     try {
       const data = await uploadAnimalImage(selectedFile, currentAnimal.id)
       setUploadedInfo(data.upload)
+      const shapeInfo = data.upload.preprocessedShape
+        ? ` | Preprocessed tensor: [${data.upload.preprocessedShape.join(', ')}]`
+        : ''
       setSuccessMsg(
-        `Image uploaded to server (${data.upload.width}×${data.upload.height} ${data.upload.format}, ${data.upload.sizeKB} KB).`
+        `Image uploaded to server (${data.upload.width}×${data.upload.height} ${data.upload.format}, ${data.upload.sizeKB} KB${shapeInfo}).`
       )
       return data.upload
     } catch (err) {

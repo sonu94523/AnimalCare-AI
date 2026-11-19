@@ -22,6 +22,8 @@ backend/uploads/*
 # ML dataset & temporary files
 ml/dataset/*
 !ml/dataset/.gitkeep
+!ml/dataset/README.md
+!ml/dataset/class_indices.json
 ml/saved_models/*
 !ml/saved_models/.gitkeep
 

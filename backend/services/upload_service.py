@@ -1,8 +1,15 @@
 import io
 import os
+import sys
 import uuid
 from PIL import Image
 from werkzeug.utils import secure_filename
+
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+from ml.preprocessing import IMAGE_SIZE, preprocess_image
 
 ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png"}
 ALLOWED_PIL_FORMATS = {"JPEG", "PNG"}
@@ -51,6 +58,13 @@ def validate_and_save_image(file_storage, upload_folder):
     with open(saved_path, "wb") as f:
         f.write(file_bytes)
 
+    preprocessed_tensor = preprocess_image(
+        file_bytes,
+        target_size=IMAGE_SIZE,
+        normalization="mobilenet_v2",
+        expand_dims=True,
+    )
+
     return {
         "filename": unique_filename,
         "originalName": original_name,
@@ -58,5 +72,7 @@ def validate_and_save_image(file_storage, upload_folder):
         "width": width,
         "height": height,
         "format": img_format,
-        "sizeKB": round(size_bytes / 1024, 2)
+        "sizeKB": round(size_bytes / 1024, 2),
+        "preprocessedShape": list(preprocessed_tensor.shape),
+        "normalization": "mobilenet_v2 ([-1.0, 1.0])"
     }, None
