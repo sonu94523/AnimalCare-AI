@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { useSearchParams, useNavigate, Link } from 'react-router-dom'
 import { ANIMALS } from './AnimalSelection'
-import { uploadAnimalImage } from '../services/api'
+import { uploadAnimalImage, predictAnimalImage } from '../services/api'
 
 const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/jpg', 'image/png']
 const ALLOWED_EXTENSIONS = ['jpg', 'jpeg', 'png']
@@ -16,6 +16,7 @@ function ImageDetection() {
   const [previewUrl, setPreviewUrl] = useState('')
   const [uploading, setUploading] = useState(false)
   const [uploadedInfo, setUploadedInfo] = useState(null)
+  const [predictionResult, setPredictionResult] = useState(null)
   const [errorMsg, setErrorMsg] = useState('')
   const [successMsg, setSuccessMsg] = useState('')
 
@@ -40,6 +41,7 @@ function ImageDetection() {
     setErrorMsg('')
     setSuccessMsg('')
     setUploadedInfo(null)
+    setPredictionResult(null)
 
     if (!file) {
       setSelectedFile(null)
@@ -77,13 +79,16 @@ function ImageDetection() {
     try {
       const data = await uploadAnimalImage(selectedFile, currentAnimal.id)
       setUploadedInfo(data.upload)
+      if (data.prediction) {
+        setPredictionResult(data.prediction)
+      }
       const shapeInfo = data.upload.preprocessedShape
         ? ` | Preprocessed tensor: [${data.upload.preprocessedShape.join(', ')}]`
         : ''
       setSuccessMsg(
         `Image uploaded to server (${data.upload.width}×${data.upload.height} ${data.upload.format}, ${data.upload.sizeKB} KB${shapeInfo}).`
       )
-      return data.upload
+      return data
     } catch (err) {
       const serverError = err?.response?.data?.error
       if (serverError) {
@@ -108,26 +113,42 @@ function ImageDetection() {
       return
     }
 
-    let uploadData = uploadedInfo
-    if (!uploadData) {
-      uploadData = await handleUploadImage()
-      if (!uploadData) {
-        return
-      }
-    }
+    setUploading(true)
+    setErrorMsg('')
+    try {
+      const data = await predictAnimalImage(selectedFile, currentAnimal.id)
+      const uploadData = data.upload
+      const pred = data.prediction
+      setUploadedInfo(uploadData)
+      setPredictionResult(pred)
 
-    navigate('/results', {
-      state: {
-        animal: currentAnimal.name,
-        animalId: currentAnimal.id,
-        imageName: uploadData.originalName || selectedFile.name,
-        imagePath: uploadData.imagePath,
-        previewUrl,
-        imagePrediction: 'Image uploaded & validated (MobileNetV2 model connects in Week 2)',
-        confidence: null,
-        symptoms: []
-      }
-    })
+      navigate('/results', {
+        state: {
+          animal: currentAnimal.name,
+          animalId: currentAnimal.id,
+          imageName: uploadData.originalName || selectedFile.name,
+          imagePath: uploadData.imagePath,
+          previewUrl,
+          imagePrediction: pred.imagePrediction,
+          predictedClass: pred.predictedClass,
+          confidence: pred.confidence,
+          isLowConfidence: pred.isLowConfidence,
+          uncertaintyNotice: pred.uncertaintyNotice,
+          classProbabilities: pred.classProbabilities,
+          symptomAnalysis: pred.summary,
+          preventionTips: pred.preventionTips,
+          symptoms: []
+        }
+      })
+    } catch (err) {
+      const serverError = err?.response?.data?.error
+      setErrorMsg(
+        serverError ||
+          'Could not run MobileNetV2 image prediction. Ensure the Flask server is running on port 5000.'
+      )
+    } finally {
+      setUploading(false)
+    }
   }
 
   return (

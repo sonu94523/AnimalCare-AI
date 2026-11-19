@@ -61,3 +61,16 @@ export async function uploadAnimalImage(file, animalId) {
   })
   return response.data
 }
+
+export async function predictAnimalImage(file, animalId) {
+  const formData = new FormData()
+  formData.append('image', file)
+  formData.append('animal', animalId)
+
+  const response = await apiClient.post('/api/predict/image', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data'
+    }
+  })
+  return response.data
+}

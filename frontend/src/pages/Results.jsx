@@ -60,7 +60,7 @@ function Results() {
           <h3>Screening Analysis</h3>
           <div className="result-box">
             <p>
-              <strong>Image Prediction:</strong> {resultData.imagePrediction}
+              <strong>Image Prediction (MobileNetV2):</strong> {resultData.imagePrediction}
             </p>
             <p>
               <strong>Model Confidence:</strong>{' '}
@@ -70,9 +70,28 @@ function Results() {
             </p>
           </div>
 
+          {resultData.isLowConfidence && resultData.uncertaintyNotice && (
+            <div className="notice-warning" style={{ marginBottom: '1rem' }}>
+              <strong>⚠️ Low Confidence / Uncertain Result:</strong> {resultData.uncertaintyNotice}
+            </div>
+          )}
+
+          {Array.isArray(resultData.classProbabilities) && resultData.classProbabilities.length > 0 && (
+            <div className="result-subsection" style={{ marginBottom: '1rem' }}>
+              <h4>MobileNetV2 Class Probability Breakdown</h4>
+              <ul className="result-list">
+                {resultData.classProbabilities.map((item) => (
+                  <li key={item.classId}>
+                    <strong>{item.label}:</strong> {item.probabilityPercent}%
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           <div className="result-box">
             <p>
-              <strong>Symptom-Based Analysis:</strong>{' '}
+              <strong>Screening & Symptom Analysis:</strong>{' '}
               {resultData.symptomAnalysis
                 ? resultData.symptomAnalysis
                 : resultData.symptoms && resultData.symptoms.length > 0
@@ -84,9 +103,15 @@ function Results() {
           <div className="result-subsection">
             <h4>Basic Preventive Guidance</h4>
             <ul className="result-list">
-              <li>Isolate any animal showing fever, skin nodules, or mouth lesions from the healthy herd.</li>
-              <li>Maintain clean water, dry bedding, and disinfected feeding equipment.</li>
-              <li>Control biting insects (flies, mosquitoes, ticks) around cattle sheds.</li>
+              {Array.isArray(resultData.preventionTips) && resultData.preventionTips.length > 0 ? (
+                resultData.preventionTips.map((tip, idx) => <li key={idx}>{tip}</li>)
+              ) : (
+                <>
+                  <li>Isolate any animal showing fever, skin nodules, or mouth lesions from the healthy herd.</li>
+                  <li>Maintain clean water, dry bedding, and disinfected feeding equipment.</li>
+                  <li>Control biting insects (flies, mosquitoes, ticks) around cattle sheds.</li>
+                </>
+              )}
             </ul>
           </div>
 

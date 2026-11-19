@@ -3,6 +3,7 @@ import os
 from flask import Blueprint, current_app, jsonify, request
 from database.db import db
 from models.db_models import Animal, Disease, Prediction
+from services.prediction_service import predict_disease_from_image
 from services.upload_service import validate_and_save_image
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -353,11 +354,64 @@ def upload_image():
     if error_msg:
         return jsonify({"error": error_msg}), 400
 
+    saved_file_path = os.path.join(
+        current_app.config["UPLOAD_FOLDER"],
+        upload_info["filename"]
+    )
+    prediction = predict_disease_from_image(saved_file_path, animal_id=animal_id)
+
     return jsonify({
-        "message": "Image uploaded and validated successfully.",
+        "message": "Image uploaded, validated, and classified with MobileNetV2.",
         "animal": animal_id,
-        "upload": upload_info
+        "upload": upload_info,
+        "prediction": prediction
     }), 201
+
+
+@api_bp.route("/predict/image", methods=["POST"])
+def predict_image_endpoint():
+    animal_id = (request.form.get("animal") or "cow").strip().lower()
+    if animal_id not in AI_SUPPORTED_ANIMALS:
+        return jsonify({
+            "error": f"AI image detection is currently unavailable for '{animal_id}'. Only Cow and Buffalo are supported."
+        }), 400
+
+    image_file = request.files.get("image")
+    upload_info, error_msg = validate_and_save_image(
+        image_file,
+        current_app.config["UPLOAD_FOLDER"]
+    )
+    if error_msg:
+        return jsonify({"error": error_msg}), 400
+
+    saved_file_path = os.path.join(
+        current_app.config["UPLOAD_FOLDER"],
+        upload_info["filename"]
+    )
+    prediction = predict_disease_from_image(saved_file_path, animal_id=animal_id)
+
+    save_history_flag = (request.form.get("saveHistory") or "true").strip().lower() != "false"
+    saved_record = None
+    if save_history_flag:
+        record = Prediction(
+            animal=animal_id.capitalize(),
+            image_path=upload_info["imagePath"],
+            selected_symptoms_json=json.dumps([]),
+            image_prediction=prediction["imagePrediction"],
+            confidence=prediction["confidence"],
+            symptom_analysis=prediction["summary"]
+        )
+        db.session.add(record)
+        db.session.commit()
+        saved_record = record.to_dict()
+
+    return jsonify({
+        "message": "MobileNetV2 image classification complete.",
+        "animal": animal_id,
+        "upload": upload_info,
+        "prediction": prediction,
+        "record": saved_record
+    }), 200
 
 
 @api_bp.route("/history", methods=["GET"])
