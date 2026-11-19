@@ -58,6 +58,29 @@ function Results() {
         {/* Right column: Prediction & Guidance */}
         <div className="result-card">
           <h3>Screening Analysis</h3>
+
+          {resultData.combinedDecision && (
+            <div
+              className={
+                resultData.combinedDecision.hasConflict || resultData.combinedDecision.isUncertain
+                  ? 'notice-warning'
+                  : 'notice-success'
+              }
+              style={{ marginBottom: '1rem' }}
+            >
+              <p style={{ marginBottom: '0.35rem' }}>
+                <strong>Final Preliminary Assessment:</strong>{' '}
+                {resultData.combinedDecision.finalConclusion}
+              </p>
+              <p style={{ marginBottom: '0.35rem' }}>
+                <strong>Agreement / Evidence Status:</strong>{' '}
+                {resultData.combinedDecision.agreementStatus} (Combined Score:{' '}
+                {resultData.combinedDecision.combinedConfidence}%)
+              </p>
+              <p style={{ margin: 0 }}>{resultData.combinedDecision.explanation}</p>
+            </div>
+          )}
+
           <div className="result-box">
             <p>
               <strong>Image Prediction (MobileNetV2):</strong> {resultData.imagePrediction}

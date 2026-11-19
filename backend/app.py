@@ -59,6 +59,7 @@ def create_app():
                 "/api/diseases",
                 "/api/upload",
                 "/api/predict/image",
+                "/api/predict/combined",
                 "/api/model/info",
                 "/api/history",
                 "/api/predictions"

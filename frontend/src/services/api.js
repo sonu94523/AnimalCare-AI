@@ -74,3 +74,8 @@ export async function predictAnimalImage(file, animalId) {
   })
   return response.data
 }
+
+export async function submitCombinedPrediction(payload) {
+  const response = await apiClient.post('/api/predict/combined', payload)
+  return response.data
+}

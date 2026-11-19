@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
-import { useSearchParams, useNavigate } from 'react-router-dom'
+import { useSearchParams, useNavigate, useLocation } from 'react-router-dom'
 import { ANIMALS } from './AnimalSelection'
-import { fetchSymptoms, submitSymptomForm } from '../services/api'
+import { fetchSymptoms, submitSymptomForm, submitCombinedPrediction } from '../services/api'
 
 export const SYMPTOM_LIST = [
   {
@@ -93,6 +93,8 @@ export const SYMPTOM_LIST = [
 function SymptomChecker() {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
+  const location = useLocation()
+  const attachedImageState = location.state || {}
   const initialAnimal = searchParams.get('animal') || 'cow'
   const [animalId, setAnimalId] = useState(initialAnimal)
   const [allSymptoms, setAllSymptoms] = useState(SYMPTOM_LIST)
@@ -154,6 +156,48 @@ function SymptomChecker() {
 
     setSubmitting(true)
     try {
+      const hasAttachedImage = Boolean(
+        attachedImageState.predictionResult && currentAnimal.aiSupported
+      )
+
+      if (hasAttachedImage) {
+        const combinedResp = await submitCombinedPrediction({
+          animal: currentAnimal.id,
+          symptoms: selectedSymptoms,
+          imagePath: attachedImageState.uploadedInfo?.imagePath || null,
+          imageFilename: attachedImageState.uploadedInfo?.filename || null,
+          imagePredictionData: attachedImageState.predictionResult
+        })
+        const imgRes = combinedResp.imageResult || attachedImageState.predictionResult
+        const symRes = combinedResp.symptomResult || {}
+        const combDec = combinedResp.combinedDecision
+
+        navigate('/results', {
+          state: {
+            animal: currentAnimal.name,
+            animalId: currentAnimal.id,
+            imageName: attachedImageState.imageName,
+            imagePath: attachedImageState.uploadedInfo?.imagePath || null,
+            previewUrl: attachedImageState.previewUrl || null,
+            imagePrediction: imgRes.imagePrediction,
+            predictedClass: imgRes.predictedClass,
+            confidence: imgRes.confidence,
+            isLowConfidence: imgRes.isLowConfidence,
+            uncertaintyNotice: imgRes.uncertaintyNotice,
+            classProbabilities: imgRes.classProbabilities,
+            symptoms: symRes.selectedSymptoms || selectedSymptoms,
+            symptomTopCondition: symRes.topCondition,
+            symptomMatchScore: symRes.matchScorePercent,
+            symptomMatchLevel: symRes.matchLevel,
+            matchedConditions: symRes.matchedConditions || [],
+            symptomAnalysis: symRes.symptomAnalysis,
+            preventionTips: combDec?.preventionTips || symRes.preventionTips,
+            combinedDecision: combDec
+          }
+        })
+        return
+      }
+
       const response = await submitSymptomForm(currentAnimal.id, selectedSymptoms)
       navigate('/results', {
         state: {
@@ -171,7 +215,8 @@ function SymptomChecker() {
           symptomMatchLevel: response.matchLevel,
           matchedConditions: response.matchedConditions || [],
           symptomAnalysis: response.symptomAnalysis,
-          preventionTips: response.preventionTips
+          preventionTips: response.preventionTips,
+          combinedDecision: response.combinedDecision
         }
       })
     } catch (err) {
@@ -210,6 +255,14 @@ function SymptomChecker() {
       </div>
 
       <form className="form-card" onSubmit={handleAnalyzeSymptoms}>
+        {attachedImageState.predictionResult && currentAnimal.aiSupported && (
+          <div className="notice-success" style={{ marginBottom: '1.25rem' }}>
+            <strong>✓ Uploaded Image Attached for Combined Screening:</strong>{' '}
+            {attachedImageState.imageName || 'Animal photo'} — MobileNetV2 classified as{' '}
+            <strong>{attachedImageState.predictionResult.imagePrediction}</strong> (
+            {attachedImageState.predictionResult.confidence}% confidence). Select observed clinical symptoms below to cross-check visual and symptomatic evidence.
+          </div>
+        )}
         <div className="form-group">
           <label htmlFor="symptom-animal-select">1. Select Animal Category</label>
           <select

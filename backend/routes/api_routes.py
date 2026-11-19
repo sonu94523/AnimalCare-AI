@@ -3,6 +3,7 @@ import os
 from flask import Blueprint, current_app, jsonify, request
 from database.db import db
 from models.db_models import Animal, Disease, Prediction
+from services.decision_service import evaluate_combined_decision
 from services.prediction_service import predict_disease_from_image
 from services.symptom_service import analyze_symptoms, resolve_symptom_ids
 from services.upload_service import validate_and_save_image
@@ -279,6 +280,11 @@ def submit_symptoms():
         return jsonify({"error": err_msg}), 400
 
     analysis = analyze_symptoms(animal_id, resolved_ids)
+    combined_decision = evaluate_combined_decision(
+        animal_id=animal_id,
+        image_result=None,
+        symptom_result=analysis,
+    )
 
     save_history_flag = data.get("saveHistory", True) is not False
     saved_record = None
@@ -303,6 +309,7 @@ def submit_symptoms():
     return jsonify({
         "message": "Symptom rule analysis completed.",
         **analysis,
+        "combinedDecision": combined_decision,
         "record": saved_record
     }), 200
 
@@ -385,6 +392,11 @@ def predict_image_endpoint():
         upload_info["filename"]
     )
     prediction = predict_disease_from_image(saved_file_path, animal_id=animal_id)
+    combined_decision = evaluate_combined_decision(
+        animal_id=animal_id,
+        image_result=prediction,
+        symptom_result=None,
+    )
 
     save_history_flag = (request.form.get("saveHistory") or "true").strip().lower() != "false"
     saved_record = None
@@ -406,6 +418,106 @@ def predict_image_endpoint():
         "animal": animal_id,
         "upload": upload_info,
         "prediction": prediction,
+        "combinedDecision": combined_decision,
+        "record": saved_record
+    }), 200
+
+
+@api_bp.route("/predict/combined", methods=["POST"])
+def predict_combined_endpoint():
+    data = request.get_json(silent=True) or {}
+    animal_id = (data.get("animal") or request.form.get("animal") or "cow").strip().lower()
+    if animal_id not in ALL_ANIMALS:
+        return jsonify({"error": "Please select a valid animal category."}), 400
+
+    # 1. Resolve image prediction (from uploaded file, existing server filename, or precomputed object)
+    image_result = data.get("imagePredictionData")
+    image_path = data.get("imagePath")
+
+    if "image" in request.files and animal_id in AI_SUPPORTED_ANIMALS:
+        upload_info, error_msg = validate_and_save_image(
+            request.files.get("image"),
+            current_app.config["UPLOAD_FOLDER"]
+        )
+        if error_msg:
+            return jsonify({"error": error_msg}), 400
+        image_path = upload_info["imagePath"]
+        saved_file_path = os.path.join(
+            current_app.config["UPLOAD_FOLDER"],
+            upload_info["filename"]
+        )
+        image_result = predict_disease_from_image(saved_file_path, animal_id=animal_id)
+    elif not image_result and data.get("imageFilename") and animal_id in AI_SUPPORTED_ANIMALS:
+        candidate_path = os.path.join(
+            current_app.config["UPLOAD_FOLDER"],
+            os.path.basename(str(data.get("imageFilename")))
+        )
+        if os.path.isfile(candidate_path):
+            image_result = predict_disease_from_image(candidate_path, animal_id=animal_id)
+
+    # 2. Resolve symptom analysis
+    raw_symptoms = data.get("symptoms")
+    if raw_symptoms is None and request.form.get("symptoms"):
+        try:
+            raw_symptoms = json.loads(request.form.get("symptoms"))
+        except Exception:
+            raw_symptoms = [s.strip() for s in request.form.get("symptoms", "").split(",") if s.strip()]
+
+    symptom_result = None
+    resolved_labels = []
+    if isinstance(raw_symptoms, list) and len(raw_symptoms) > 0:
+        resolved_ids, resolved_labels, err_msg = resolve_symptom_ids(animal_id, raw_symptoms)
+        if err_msg:
+            return jsonify({"error": err_msg}), 400
+        symptom_result = analyze_symptoms(animal_id, resolved_ids)
+
+    if not image_result and not symptom_result:
+        return jsonify({
+            "error": "Please provide an uploaded image, observed symptoms, or both for combined screening."
+        }), 400
+
+    combined_decision = evaluate_combined_decision(
+        animal_id=animal_id,
+        image_result=image_result,
+        symptom_result=symptom_result,
+    )
+
+    save_history_flag = data.get("saveHistory", True) is not False
+    saved_record = None
+    if save_history_flag:
+        img_pred_str = (
+            image_result["imagePrediction"]
+            if image_result
+            else (
+                "No image uploaded (Symptom-only check)"
+                if animal_id in AI_SUPPORTED_ANIMALS
+                else f"AI Image Detection unavailable for {animal_id.capitalize()}"
+            )
+        )
+        sym_summary_str = (
+            f"{symptom_result['topCondition']} ({symptom_result['matchScorePercent']}%) — {combined_decision['agreementStatus']}"
+            if symptom_result
+            else combined_decision["explanation"]
+        )
+        record = Prediction(
+            animal=animal_id.capitalize(),
+            image_path=image_path,
+            selected_symptoms_json=json.dumps(resolved_labels),
+            image_prediction=img_pred_str,
+            confidence=combined_decision["combinedConfidence"],
+            symptom_analysis=sym_summary_str
+        )
+        db.session.add(record)
+        db.session.commit()
+        saved_record = record.to_dict()
+
+    return jsonify({
+        "message": "Combined image and symptom decision completed.",
+        "animalId": animal_id,
+        "animal": animal_id.capitalize(),
+        "imageResult": image_result,
+        "symptomResult": symptom_result,
+        "combinedDecision": combined_decision,
         "record": saved_record
     }), 200
 

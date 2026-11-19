@@ -137,6 +137,7 @@ function ImageDetection() {
           classProbabilities: pred.classProbabilities,
           symptomAnalysis: pred.summary,
           preventionTips: pred.preventionTips,
+          combinedDecision: data.combinedDecision,
           symptoms: []
         }
       })
@@ -149,6 +150,33 @@ function ImageDetection() {
     } finally {
       setUploading(false)
     }
+  }
+
+  const handleProceedToCombinedSymptoms = async () => {
+    if (selectedFile && !predictionResult) {
+      const uploaded = await handleUploadImage()
+      if (!uploaded) {
+        return
+      }
+      navigate(`/symptoms?animal=${currentAnimal.id}`, {
+        state: {
+          uploadedInfo: uploaded.upload,
+          predictionResult: uploaded.prediction,
+          previewUrl,
+          imageName: uploaded.upload?.originalName || selectedFile.name
+        }
+      })
+      return
+    }
+
+    navigate(`/symptoms?animal=${currentAnimal.id}`, {
+      state: {
+        uploadedInfo,
+        predictionResult,
+        previewUrl,
+        imageName: uploadedInfo?.originalName || selectedFile?.name || null
+      }
+    })
   }
 
   return (
@@ -232,9 +260,14 @@ function ImageDetection() {
               <button type="submit" className="btn btn-primary" disabled={uploading}>
                 {uploading ? 'Processing...' : '2. Upload & View Screening Result'}
               </button>
-              <Link to={`/symptoms?animal=${currentAnimal.id}`} className="btn btn-outline">
-                Also Select Symptoms
-              </Link>
+              <button
+                type="button"
+                className="btn btn-outline"
+                disabled={uploading}
+                onClick={handleProceedToCombinedSymptoms}
+              >
+                3. Also Select Symptoms (Combined Check)
+              </button>
             </div>
           </form>
         )}
