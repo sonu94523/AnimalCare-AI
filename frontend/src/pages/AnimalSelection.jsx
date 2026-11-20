@@ -1,63 +1,15 @@
 import React, { useState, useEffect } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
+import { OFFLINE_FALLBACK_ANIMALS } from '../data/fallbackData'
 import { fetchAnimals } from '../services/api'
 
-export const ANIMALS = [
-  {
-    id: 'cow',
-    name: 'Cow',
-    emoji: '🐄',
-    aiSupported: true,
-    badge: 'Demo Image + Symptom Screening',
-    details: 'Supports MobileNetV2 demo image screening (not clinically validated) and rule-based symptom analysis.'
-  },
-  {
-    id: 'buffalo',
-    name: 'Buffalo',
-    emoji: '🐃',
-    aiSupported: true,
-    badge: 'Demo Image + Symptom Screening',
-    details: 'Supports MobileNetV2 demo image screening (not clinically validated) and rule-based symptom analysis.'
-  },
-  {
-    id: 'goat',
-    name: 'Goat',
-    emoji: '🐐',
-    aiSupported: false,
-    badge: 'AI Image Detection Unavailable',
-    details: 'AI image detection is disabled until a verified goat disease image dataset is trained.'
-  },
-  {
-    id: 'sheep',
-    name: 'Sheep',
-    emoji: '🐑',
-    aiSupported: false,
-    badge: 'AI Image Detection Unavailable',
-    details: 'AI image detection is disabled until a verified sheep disease image dataset is trained.'
-  },
-  {
-    id: 'dog',
-    name: 'Dog',
-    emoji: '🐕',
-    aiSupported: false,
-    badge: 'AI Image Detection Unavailable',
-    details: 'AI image detection is disabled until a verified canine disease image dataset is trained.'
-  },
-  {
-    id: 'cat',
-    name: 'Cat',
-    emoji: '🐈',
-    aiSupported: false,
-    badge: 'AI Image Detection Unavailable',
-    details: 'AI image detection is disabled until a verified feline disease image dataset is trained.'
-  }
-]
+export const ANIMALS = OFFLINE_FALLBACK_ANIMALS
 
 function AnimalSelection() {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const initialAnimal = searchParams.get('animal') || 'cow'
-  const [animalsList, setAnimalsList] = useState(ANIMALS)
+  const [animalsList, setAnimalsList] = useState(OFFLINE_FALLBACK_ANIMALS)
   const [selectedId, setSelectedId] = useState(initialAnimal)
 
   useEffect(() => {
@@ -69,7 +21,7 @@ function AnimalSelection() {
         }
       })
       .catch(() => {
-        // Fallback to local ANIMALS constant if backend is offline
+        // Fallback to OFFLINE_FALLBACK_ANIMALS when backend is offline
       })
     return () => {
       mounted = false
@@ -90,7 +42,7 @@ function AnimalSelection() {
       <div className="page-header">
         <h1>Step 1: Select Animal Category</h1>
         <p>
-          Choose an animal below to begin preliminary disease screening. Actual AI image detection is currently supported for <strong>Cow</strong> and <strong>Buffalo</strong>.
+          Choose an animal below to begin preliminary disease screening. Demo image screening is configured for <strong>Cow</strong> and <strong>Buffalo</strong>.
         </p>
       </div>
 
@@ -135,11 +87,11 @@ function AnimalSelection() {
           </h2>
           {selectedAnimal.aiSupported ? (
             <p className="notice-success">
-              ✓ <strong>AI Image Detection is available</strong> for {selectedAnimal.name}. You can proceed with image upload, symptom analysis, or both.
+              ✓ <strong>Demo Image & Symptom Screening available</strong> for {selectedAnimal.name}. You can proceed with image upload, symptom analysis, or both.
             </p>
           ) : (
             <p className="notice-warning">
-              ⚠️ <strong>AI Image Detection is currently unavailable</strong> for {selectedAnimal.name} because verified training datasets are only configured for Cow and Buffalo. We do not generate fake predictions for unsupported animals.
+              ⚠️ <strong>AI Image Detection is currently unavailable</strong> for {selectedAnimal.name}. We never generate fake image predictions for unsupported animals.
             </p>
           )}
         </div>

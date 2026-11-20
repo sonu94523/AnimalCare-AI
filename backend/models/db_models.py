@@ -91,6 +91,7 @@ class Prediction(db.Model):
     image_prediction = db.Column(db.String(128), nullable=True)
     confidence = db.Column(db.Float, nullable=True)
     symptom_analysis = db.Column(db.Text, nullable=True)
+    details_json = db.Column(db.Text, nullable=True)
     created_at = db.Column(
         db.DateTime,
         default=lambda: datetime.now(timezone.utc),
@@ -98,13 +99,16 @@ class Prediction(db.Model):
     )
 
     def to_dict(self):
+        details = json.loads(self.details_json) if self.details_json else None
         return {
             "id": self.id,
             "animal": self.animal,
+            "animalId": (self.animal or "").strip().lower(),
             "imagePath": self.image_path,
             "symptoms": json.loads(self.selected_symptoms_json) if self.selected_symptoms_json else [],
             "imagePrediction": self.image_prediction or "N/A",
             "confidence": self.confidence,
             "symptomAnalysis": self.symptom_analysis or "N/A",
+            "details": details,
             "date": self.created_at.strftime("%Y-%m-%d %H:%M"),
         }

@@ -9,6 +9,7 @@ import SymptomChecker from './pages/SymptomChecker'
 import Results from './pages/Results'
 import DiseaseInfo from './pages/DiseaseInfo'
 import History from './pages/History'
+import NotFound from './pages/NotFound'
 
 function App() {
   return (
@@ -24,6 +25,7 @@ function App() {
             <Route path="/results" element={<Results />} />
             <Route path="/diseases" element={<DiseaseInfo />} />
             <Route path="/history" element={<History />} />
+            <Route path="*" element={<NotFound />} />
           </Routes>
         </main>
         <Footer />

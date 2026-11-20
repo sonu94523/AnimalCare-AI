@@ -3,105 +3,18 @@ Rule-Based Symptom Analysis Engine for Preliminary Animal Disease Screening.
 
 Evaluates user-selected clinical symptoms against weighted veterinary symptom
 rules for supported animals (Cow, Buffalo, Goat, Sheep, Dog, Cat).
-Provides transparent rule match scores, matched symptom breakdowns, honest
-non-specific/inconclusive handling, and preventive care recommendations.
+Imports symptom definitions and prevention tips from `backend.domain_data`.
 """
 
 from typing import Any, Dict, List, Set, Tuple
 
-# Map both symptom IDs and human-readable labels to canonical symptom IDs
-SYMPTOM_CATALOG: List[Dict[str, Any]] = [
-    {
-        "id": "fever",
-        "label": "Fever (High body temperature)",
-        "category": "general",
-        "animals": ["cow", "buffalo", "goat", "sheep", "dog", "cat"],
-    },
-    {
-        "id": "loss_of_appetite",
-        "label": "Loss of appetite (Reduced feed intake)",
-        "category": "general",
-        "animals": ["cow", "buffalo", "goat", "sheep", "dog", "cat"],
-    },
-    {
-        "id": "coughing",
-        "label": "Coughing or respiratory distress",
-        "category": "general",
-        "animals": ["cow", "buffalo", "goat", "sheep", "dog", "cat"],
-    },
-    {
-        "id": "diarrhea",
-        "label": "Diarrhea",
-        "category": "general",
-        "animals": ["cow", "buffalo", "goat", "sheep", "dog", "cat"],
-    },
-    {
-        "id": "skin_lesions",
-        "label": "Skin lesions / sores / scabs",
-        "category": "general",
-        "animals": ["cow", "buffalo", "goat", "sheep", "dog", "cat"],
-    },
-    {
-        "id": "swelling",
-        "label": "Swelling (limbs, brisket, or lymph nodes)",
-        "category": "general",
-        "animals": ["cow", "buffalo", "goat", "sheep", "dog", "cat"],
-    },
-    {
-        "id": "weakness",
-        "label": "Weakness / lethargy",
-        "category": "general",
-        "animals": ["cow", "buffalo", "goat", "sheep", "dog", "cat"],
-    },
-    {
-        "id": "difficulty_walking",
-        "label": "Difficulty walking / lameness",
-        "category": "general",
-        "animals": ["cow", "buffalo", "goat", "sheep", "dog", "cat"],
-    },
-    {
-        "id": "reduced_milk",
-        "label": "Reduced milk production",
-        "category": "specific",
-        "animals": ["cow", "buffalo", "goat", "sheep"],
-    },
-    {
-        "id": "skin_nodules",
-        "label": "Firm round skin nodules (2–5 cm) on head, neck, or body",
-        "category": "specific",
-        "animals": ["cow", "buffalo"],
-    },
-    {
-        "id": "mouth_hoof_blisters",
-        "label": "Blisters / vesicles on tongue, gums, muzzle, or hooves",
-        "category": "specific",
-        "animals": ["cow", "buffalo", "goat", "sheep"],
-    },
-    {
-        "id": "excessive_salivation",
-        "label": "Excessive ropy salivation / drooling",
-        "category": "specific",
-        "animals": ["cow", "buffalo", "goat", "sheep", "dog", "cat"],
-    },
-    {
-        "id": "nasal_ocular_discharge",
-        "label": "Nasal and ocular (watery eye) discharge",
-        "category": "specific",
-        "animals": ["cow", "buffalo", "goat", "sheep", "dog", "cat"],
-    },
-    {
-        "id": "fur_hair_loss",
-        "label": "Patchy hair/fur loss or frequent scratching",
-        "category": "specific",
-        "animals": ["dog", "cat"],
-    },
-]
+from backend.domain_data import CONDITION_PREVENTION, SYMPTOM_CATALOG
 
 ID_TO_LABEL: Dict[str, str] = {item["id"]: item["label"] for item in SYMPTOM_CATALOG}
 LABEL_TO_ID: Dict[str, str] = {item["label"].lower(): item["id"] for item in SYMPTOM_CATALOG}
 
 # Weighted disease rules:
-# Hallmark symptoms carry higher weights (3.0 - 4.0); supporting symptoms carry 1.0 - 1.5.
+# Hallmark symptoms carry higher weights (3.0 - 4.0); supporting symptoms carry 0.5 - 2.0.
 DISEASE_RULES: List[Dict[str, Any]] = [
     {
         "conditionId": "lumpy_skin_disease",
@@ -118,11 +31,7 @@ DISEASE_RULES: List[Dict[str, Any]] = [
             "nasal_ocular_discharge": 1.0,
             "weakness": 0.5,
         },
-        "prevention": [
-            "Immediately isolate the animal showing skin nodules or fever from the rest of the herd.",
-            "Control blood-feeding insect vectors (mosquitoes, biting flies, ticks) in cattle sheds.",
-            "Disinfect premises and contact a veterinarian for confirmatory LSD diagnosis and vaccination advice.",
-        ],
+        "prevention": CONDITION_PREVENTION["lumpy_skin_disease"],
     },
     {
         "conditionId": "foot_and_mouth_disease",
@@ -138,11 +47,7 @@ DISEASE_RULES: List[Dict[str, Any]] = [
             "loss_of_appetite": 1.0,
             "weakness": 0.5,
         },
-        "prevention": [
-            "Strictly quarantine the affected animal and halt livestock movement to prevent FMD spread.",
-            "Sanitize feeding troughs, water containers, footwear, and shed entrances.",
-            "Provide soft, easily consumable feed and clean water while awaiting a veterinary officer.",
-        ],
+        "prevention": CONDITION_PREVENTION["foot_and_mouth_disease"],
     },
     {
         "conditionId": "dermatological_skin_condition",
@@ -156,11 +61,7 @@ DISEASE_RULES: List[Dict[str, Any]] = [
             "loss_of_appetite": 0.5,
             "weakness": 0.5,
         },
-        "prevention": [
-            "Keep the animal's bedding clean and dry, and prevent scratching or biting at sores.",
-            "Separate the animal from other pets or livestock in case of contagious mites or fungal infection.",
-            "Consult a veterinarian for skin scraping or dermatological examination.",
-        ],
+        "prevention": CONDITION_PREVENTION["dermatological_skin_condition"],
     },
     {
         "conditionId": "respiratory_enteric_infection",
@@ -175,11 +76,7 @@ DISEASE_RULES: List[Dict[str, Any]] = [
             "loss_of_appetite": 1.0,
             "weakness": 1.0,
         },
-        "prevention": [
-            "Ensure constant access to clean drinking water to prevent dehydration.",
-            "Keep the animal in a warm, draft-free, well-ventilated shelter away from healthy animals.",
-            "Seek veterinary evaluation if fever, coughing, or diarrhea persists.",
-        ],
+        "prevention": CONDITION_PREVENTION["respiratory_enteric_infection"],
     },
 ]
 
@@ -188,10 +85,7 @@ def resolve_symptom_ids(
     animal_id: str,
     raw_symptoms: List[str],
 ) -> Tuple[List[str], List[str], str]:
-    """
-    Validate and resolve user-submitted symptom IDs or labels for `animal_id`.
-    Returns `(symptom_ids, symptom_labels, error_message)`.
-    """
+    """Validate and resolve symptom IDs (or legacy display labels) for `animal_id`."""
     allowed_for_animal = {
         s["id"]: s["label"]
         for s in SYMPTOM_CATALOG
@@ -232,11 +126,7 @@ def analyze_symptoms(
     animal_id: str,
     symptom_ids: List[str],
 ) -> Dict[str, Any]:
-    """
-    Evaluate `symptom_ids` against `DISEASE_RULES` for `animal_id` and return
-    ranked condition matches, match score percentage, match confidence level,
-    explanation summary, and preventive care recommendations.
-    """
+    """Evaluate `symptom_ids` against `DISEASE_RULES` for `animal_id`."""
     normalized_animal = (animal_id or "cow").strip().lower()
     selected_set = set(symptom_ids)
     selected_labels = [ID_TO_LABEL.get(sid, sid) for sid in symptom_ids]
@@ -256,7 +146,6 @@ def analyze_symptoms(
         raw_score = sum(weights[sid] for sid in matched_ids)
         has_hallmark = bool(selected_set & rule["hallmarkSymptoms"])
 
-        # Normalize score to 0..100%; cap non-hallmark general matches so fever alone never claims 80% LSD
         score_percent = (raw_score / max_possible_score) * 100.0
         if has_hallmark:
             score_percent = min(98.0, score_percent * 1.25)
@@ -295,11 +184,7 @@ def analyze_symptoms(
             "No specific hallmark signs (such as skin nodules or mouth/hoof blisters) were reported, "
             "so the condition remains inconclusive. Please consult a veterinarian."
         )
-        prevention_tips = [
-            "Isolate the animal from the healthy herd or other pets as a precaution.",
-            "Provide clean water, shade/dry shelter, and monitor body temperature.",
-            "Consult a qualified veterinarian for physical examination.",
-        ]
+        prevention_tips = CONDITION_PREVENTION["inconclusive"]
     else:
         best = ranked_matches[0]
         top_condition = best["conditionName"]

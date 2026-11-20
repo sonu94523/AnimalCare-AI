@@ -8,6 +8,13 @@ from typing import Any, Dict, Optional, Tuple
 from flask import Blueprint, current_app, jsonify, request
 
 from backend.database.db import db
+from backend.domain_data import (
+    AI_SUPPORTED_ANIMALS,
+    ALL_ANIMALS,
+    INITIAL_ANIMALS,
+    INITIAL_DISEASES,
+    SYMPTOM_CATALOG,
+)
 from backend.models.db_models import Animal, Disease, Prediction, UploadRecord
 from backend.services.decision_service import evaluate_combined_decision
 from backend.services.prediction_service import (
@@ -15,7 +22,7 @@ from backend.services.prediction_service import (
     is_model_available,
     predict_disease_from_image,
 )
-from backend.services.symptom_service import SYMPTOM_CATALOG, analyze_symptoms, resolve_symptom_ids
+from backend.services.symptom_service import analyze_symptoms, resolve_symptom_ids
 from backend.services.upload_service import delete_uploaded_file, validate_and_save_image
 from ml.constants import (
     ARCHITECTURE_FILENAME,
@@ -27,122 +34,9 @@ from ml.constants import (
 logger = logging.getLogger(__name__)
 api_bp = Blueprint("api", __name__, url_prefix="/api")
 
-AI_SUPPORTED_ANIMALS = {"cow", "buffalo"}
-ALL_ANIMALS = {"cow", "buffalo", "goat", "sheep", "dog", "cat"}
-
-INITIAL_ANIMALS = [
-    {
-        "slug": "cow",
-        "name": "Cow",
-        "emoji": "🐄",
-        "ai_supported": True,
-        "badge": "Demo Image + Symptom Screening",
-        "details": "Supports MobileNetV2 demo image screening (not clinically validated) and rule-based symptom analysis.",
-    },
-    {
-        "slug": "buffalo",
-        "name": "Buffalo",
-        "emoji": "🐃",
-        "ai_supported": True,
-        "badge": "Demo Image + Symptom Screening",
-        "details": "Supports MobileNetV2 demo image screening (not clinically validated) and rule-based symptom analysis.",
-    },
-    {
-        "slug": "goat",
-        "name": "Goat",
-        "emoji": "🐐",
-        "ai_supported": False,
-        "badge": "AI Image Detection Unavailable",
-        "details": "AI image detection is disabled until a verified goat disease image dataset is trained.",
-    },
-    {
-        "slug": "sheep",
-        "name": "Sheep",
-        "emoji": "🐑",
-        "ai_supported": False,
-        "badge": "AI Image Detection Unavailable",
-        "details": "AI image detection is disabled until a verified sheep disease image dataset is trained.",
-    },
-    {
-        "slug": "dog",
-        "name": "Dog",
-        "emoji": "🐕",
-        "ai_supported": False,
-        "badge": "AI Image Detection Unavailable",
-        "details": "AI image detection is disabled until a verified canine disease image dataset is trained.",
-    },
-    {
-        "slug": "cat",
-        "name": "Cat",
-        "emoji": "🐈",
-        "ai_supported": False,
-        "badge": "AI Image Detection Unavailable",
-        "details": "AI image detection is disabled until a verified feline disease image dataset is trained.",
-    },
-]
-
-INITIAL_DISEASES = [
-    {
-        "slug": "lsd",
-        "name": "Lumpy Skin Disease (LSD)",
-        "affected_animals": "Cow, Buffalo",
-        "ai_supported": True,
-        "symptoms": [
-            "Firm, round skin nodules (2–5 cm) on the head, neck, limbs, and body",
-            "High fever (often exceeding 40°C / 104°F)",
-            "Swelling of superficial lymph nodes and limbs",
-            "Loss of appetite and sharp drop in milk production",
-            "Nasal and ocular discharge",
-        ],
-        "causes": "Caused by the Lumpy Skin Disease virus (Capripoxvirus), primarily spread by blood-feeding insect vectors such as mosquitoes, biting flies, and ticks.",
-        "prevention": [
-            "Isolate affected cattle immediately from the rest of the herd.",
-            "Report suspected cases to local veterinary authorities (LSD is a notifiable livestock disease).",
-            "Follow regional veterinary vaccination schedules against LSD.",
-            "Practice vector control (clean drainage, insect repellents, regular shed hygiene).",
-        ],
-    },
-    {
-        "slug": "fmd",
-        "name": "Foot-and-Mouth Disease (FMD)",
-        "affected_animals": "Cow, Buffalo (also affects cloven-hoofed animals like Goat and Sheep)",
-        "ai_supported": True,
-        "symptoms": [
-            "High fever followed by blister-like vesicles on the tongue, gums, muzzle, and hooves",
-            "Excessive ropy salivation and smacking of lips",
-            "Lameness, reluctance to stand, or difficulty walking due to hoof lesions",
-            "Severe loss of appetite and sudden reduction in milk yield",
-        ],
-        "causes": "Caused by an Aphthovirus (family Picornaviridae). Spreads rapidly through direct contact with infected animals, contaminated feed, footwear, or aerosols.",
-        "prevention": [
-            "Report suspected cases immediately to local veterinary authorities (FMD is a WOAH-listed notifiable disease).",
-            "Ensure routine FMD vaccination as recommended by local veterinary authorities.",
-            "Strictly quarantine newly introduced or sick animals.",
-            "Sanitize footbaths, sheds, and feeding troughs regularly.",
-        ],
-    },
-    {
-        "slug": "healthy",
-        "name": "Healthy Animal Baseline",
-        "affected_animals": "Cow, Buffalo",
-        "ai_supported": True,
-        "symptoms": [
-            "Clear coat and skin free of nodules, scabs, or open sores",
-            "Normal body temperature, alert posture, and steady gait",
-            "Regular appetite, rumination, and consistent milk output",
-        ],
-        "causes": "Good nutrition, clean housing, regular vaccination, and routine veterinary care.",
-        "prevention": [
-            "Provide balanced fodder and clean drinking water daily.",
-            "Maintain dry, well-ventilated shelters.",
-            "Keep an updated vaccination and deworming calendar with a veterinarian.",
-        ],
-    },
-]
-
 
 def seed_initial_data() -> None:
-    """Populate the SQLite database with initial Animals and Diseases if empty."""
+    """Populate Animals and Diseases from `backend.domain_data` if empty."""
     if Animal.query.count() == 0:
         for item in INITIAL_ANIMALS:
             db.session.add(Animal(**item))
@@ -177,7 +71,7 @@ def _parse_json_object() -> Tuple[Optional[Dict[str, Any]], Optional[Tuple[Any, 
 
 
 def _require_admin_token() -> Optional[Tuple[Any, int]]:
-    """Fail-closed admin token guard for destructive or manual history writes."""
+    """Fail-closed admin token guard for destructive history operations."""
     expected = (current_app.config.get("ADMIN_TOKEN") or "").strip()
     if not expected:
         return jsonify({
@@ -270,7 +164,7 @@ def get_symptoms():
     animal_filter = (request.args.get("animal") or "").strip().lower()
     if animal_filter and animal_filter in ALL_ANIMALS:
         filtered = [s for s in SYMPTOM_CATALOG if animal_filter in s["animals"]]
-        return jsonify({"animal": animal_filter, "symptoms": filtered})
+        return jsonify({"animalId": animal_filter, "animal": animal_filter.capitalize(), "symptoms": filtered})
     return jsonify({"symptoms": SYMPTOM_CATALOG})
 
 
@@ -306,6 +200,12 @@ def submit_symptoms():
             if animal_id in AI_SUPPORTED_ANIMALS
             else f"AI Image Detection unavailable for {analysis['animal']}"
         )
+        details_payload = {
+            "imageResult": None,
+            "symptomResult": analysis,
+            "combinedDecision": combined_decision,
+            "preventionTips": analysis["preventionTips"],
+        }
         record = Prediction(
             animal=analysis["animal"],
             image_path=None,
@@ -313,6 +213,7 @@ def submit_symptoms():
             image_prediction=image_pred_text,
             confidence=analysis["matchScorePercent"],
             symptom_analysis=f"{analysis['topCondition']} ({analysis['matchLevel']} - {analysis['matchScorePercent']}%)",
+            details_json=json.dumps(details_payload),
         )
         db.session.add(record)
         db.session.commit()
@@ -379,10 +280,7 @@ def get_model_info():
 
 @api_bp.route("/upload", methods=["POST"])
 def upload_image():
-    """Upload, validate and classify an image without creating a history row yet.
-
-    Returns a server-side `uploadId` that can later be passed to `/api/predict/combined`.
-    """
+    """Upload, validate and classify an image without creating a history row yet."""
     animal_id = (request.form.get("animal") or "cow").strip().lower()
     result, err_resp = _run_image_upload_and_predict(animal_id)
     if err_resp:
@@ -415,6 +313,13 @@ def predict_image_endpoint():
 
     saved_record = None
     if _parse_save_history_flag({}):
+        details_payload = {
+            "imageResult": prediction,
+            "symptomResult": None,
+            "combinedDecision": combined_decision,
+            "preventionTips": prediction["preventionTips"],
+            "originalName": upload_info["originalName"],
+        }
         record = Prediction(
             animal=animal_id.capitalize(),
             image_path=upload_info["imagePath"],
@@ -422,6 +327,7 @@ def predict_image_endpoint():
             image_prediction=prediction["imagePrediction"],
             confidence=prediction["confidence"],
             symptom_analysis=prediction["summary"],
+            details_json=json.dumps(details_payload),
         )
         db.session.add(record)
         db.session.commit()
@@ -449,16 +355,15 @@ def predict_combined_endpoint():
     if animal_id not in ALL_ANIMALS:
         return jsonify({"error": "Please select a valid animal category."}), 400
 
-    # Reject attempts to supply client-forged predictions or arbitrary external paths.
     if "imagePredictionData" in data or "imagePath" in data:
         return jsonify({
             "error": "Client-supplied imagePredictionData and imagePath are not accepted. "
                      "Upload an image file or pass the server-issued uploadId."
         }), 400
 
-    # 1. Resolve image prediction strictly from server-side upload or fresh file
     image_result = None
     image_path = None
+    original_name = None
     upload_id = data.get("uploadId") or request.form.get("uploadId")
 
     if "image" in request.files:
@@ -467,6 +372,7 @@ def predict_combined_endpoint():
             return upload_err
         image_result = result["prediction"]
         image_path = result["upload"]["imagePath"]
+        original_name = result["upload"]["originalName"]
     elif upload_id is not None:
         if not isinstance(upload_id, str) or not upload_id.strip():
             return jsonify({"error": "Invalid uploadId."}), 400
@@ -479,8 +385,8 @@ def predict_combined_endpoint():
             }), 400
         image_result = json.loads(upload_rec.prediction_json)
         image_path = upload_rec.image_path
+        original_name = upload_rec.original_name
 
-    # 2. Resolve symptom analysis
     raw_symptoms = data.get("symptoms")
     if raw_symptoms is None and request.form.get("symptoms"):
         form_sym = request.form.get("symptoms", "")
@@ -527,6 +433,13 @@ def predict_combined_endpoint():
             if symptom_result
             else combined_decision["explanation"]
         )
+        details_payload = {
+            "imageResult": image_result,
+            "symptomResult": symptom_result,
+            "combinedDecision": combined_decision,
+            "preventionTips": combined_decision["preventionTips"],
+            "originalName": original_name,
+        }
         record = Prediction(
             animal=animal_id.capitalize(),
             image_path=image_path,
@@ -534,6 +447,7 @@ def predict_combined_endpoint():
             image_prediction=img_pred_str,
             confidence=combined_decision["combinedConfidence"],
             symptom_analysis=sym_summary_str,
+            details_json=json.dumps(details_payload),
         )
         db.session.add(record)
         db.session.commit()
@@ -586,7 +500,6 @@ def delete_history_record(record_id: int):
     db.session.delete(record)
     db.session.commit()
 
-    # Remove the image file if no other Prediction row still references it.
     if img_path and Prediction.query.filter_by(image_path=img_path).count() == 0:
         delete_uploaded_file(current_app.config["UPLOAD_FOLDER"], img_path)
         UploadRecord.query.filter_by(image_path=img_path).delete()

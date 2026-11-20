@@ -6,7 +6,7 @@ import {
   deleteHistoryRecord,
   clearAllHistory
 } from '../services/api'
-import { ANIMALS } from './AnimalSelection'
+import { OFFLINE_FALLBACK_ANIMALS as ANIMALS } from '../data/fallbackData'
 
 function History() {
   const navigate = useNavigate()
@@ -90,18 +90,36 @@ function History() {
   const handleViewRecord = (rec) => {
     const isValidLocalPath = typeof rec.imagePath === 'string' && rec.imagePath.startsWith('/uploads/')
     const previewUrl = isValidLocalPath ? `${API_BASE_URL}${rec.imagePath}` : null
+    const details = rec.details || {}
+    const imgRes = details.imageResult || null
+    const symRes = details.symptomResult || null
+    const combDec = details.combinedDecision || null
+
     navigate('/results', {
       state: {
         animal: rec.animal,
-        animalId: (rec.animal || 'cow').toLowerCase(),
-        imageName: isValidLocalPath ? rec.imagePath.split('/').pop() : null,
+        animalId: rec.animalId || (rec.animal || 'cow').toLowerCase(),
+        imageName: details.originalName || (isValidLocalPath ? rec.imagePath.split('/').pop() : null),
         imagePath: isValidLocalPath ? rec.imagePath : null,
         previewUrl,
-        imagePrediction: rec.imagePrediction,
-        confidence: rec.confidence,
-        modelValidated: isValidLocalPath ? false : undefined,
-        symptoms: Array.isArray(rec.symptoms) ? rec.symptoms : [],
-        symptomAnalysis: rec.symptomAnalysis
+        imagePrediction: imgRes?.imagePrediction || rec.imagePrediction,
+        predictedClass: imgRes?.predictedClass,
+        confidence: imgRes?.confidence ?? (isValidLocalPath ? rec.confidence : null),
+        isLowConfidence: imgRes?.isLowConfidence,
+        isOutOfDistribution: imgRes?.isOutOfDistribution,
+        uncertaintyNotice: imgRes?.uncertaintyNotice,
+        classProbabilities: imgRes?.classProbabilities,
+        modelValidated: imgRes ? imgRes.modelValidated : (isValidLocalPath ? false : undefined),
+        trainingData: imgRes?.trainingData,
+        modelStatusNote: imgRes?.modelStatusNote,
+        symptoms: symRes?.selectedSymptoms || (Array.isArray(rec.symptoms) ? rec.symptoms : []),
+        symptomTopCondition: symRes?.topCondition,
+        symptomMatchScore: symRes?.matchScorePercent ?? (!isValidLocalPath ? rec.confidence : null),
+        symptomMatchLevel: symRes?.matchLevel,
+        matchedConditions: symRes?.matchedConditions || [],
+        symptomAnalysis: symRes?.symptomAnalysis || rec.symptomAnalysis,
+        preventionTips: details.preventionTips || combDec?.preventionTips || symRes?.preventionTips || imgRes?.preventionTips,
+        combinedDecision: combDec
       }
     })
   }

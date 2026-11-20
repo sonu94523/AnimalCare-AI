@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { useSearchParams, useNavigate, Link } from 'react-router-dom'
-import { ANIMALS } from './AnimalSelection'
+import { OFFLINE_FALLBACK_ANIMALS as ANIMALS } from '../data/fallbackData'
 import { uploadAnimalImage, predictAnimalImage } from '../services/api'
 
 const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/jpg', 'image/png']

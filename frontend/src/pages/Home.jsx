@@ -1,90 +1,58 @@
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-
-const ANIMAL_CATEGORIES = [
-  {
-    id: 'cow',
-    name: 'Cow',
-    emoji: '🐄',
-    aiSupported: true,
-    statusText: 'Demo Image + Symptom Screening',
-    description: 'Supports MobileNetV2 demo image screening (not clinically validated) and rule-based symptom analysis.'
-  },
-  {
-    id: 'buffalo',
-    name: 'Buffalo',
-    emoji: '🐃',
-    aiSupported: true,
-    statusText: 'Demo Image + Symptom Screening',
-    description: 'Supports MobileNetV2 demo image screening (not clinically validated) and rule-based symptom analysis.'
-  },
-  {
-    id: 'goat',
-    name: 'Goat',
-    emoji: '🐐',
-    aiSupported: false,
-    statusText: 'AI Image Detection Unavailable',
-    description: 'Displayed in interface. AI image model pending verified dataset; basic symptom reference only.'
-  },
-  {
-    id: 'sheep',
-    name: 'Sheep',
-    emoji: '🐑',
-    aiSupported: false,
-    statusText: 'AI Image Detection Unavailable',
-    description: 'Displayed in interface. AI image model pending verified dataset; basic symptom reference only.'
-  },
-  {
-    id: 'dog',
-    name: 'Dog',
-    emoji: '🐕',
-    aiSupported: false,
-    statusText: 'AI Image Detection Unavailable',
-    description: 'Displayed in interface. AI image model pending verified dataset; basic symptom reference only.'
-  },
-  {
-    id: 'cat',
-    name: 'Cat',
-    emoji: '🐈',
-    aiSupported: false,
-    statusText: 'AI Image Detection Unavailable',
-    description: 'Displayed in interface. AI image model pending verified dataset; basic symptom reference only.'
-  }
-]
+import { OFFLINE_FALLBACK_ANIMALS } from '../data/fallbackData'
+import { fetchAnimals } from '../services/api'
 
 const HOW_IT_WORKS_STEPS = [
   {
     step: '1',
     title: 'Select an Animal',
-    description: 'Choose from 6 animal categories. Full AI image detection is currently active for Cow and Buffalo.'
+    description: 'Choose from 6 animal categories. Demo image screening is configured for Cow and Buffalo.'
   },
   {
     step: '2',
-    title: 'Upload Animal Image',
-    description: 'Upload a clear JPG, JPEG, or PNG photo of the affected area for MobileNetV2 image classification.'
+    title: 'Upload Animal Image (Demo)',
+    description: 'Upload a JPG, JPEG, or PNG photo to exercise the 224 × 224 MobileNetV2 pipeline (not clinically validated).'
   },
   {
     step: '3',
     title: 'Select Observed Symptoms',
-    description: 'Check visible symptoms such as fever, skin lesions, swelling, loss of appetite, or reduced milk yield.'
+    description: 'Check visible clinical signs such as fever, skin nodules, mouth blisters, lameness, or reduced milk yield.'
   },
   {
     step: '4',
     title: 'View Preliminary Results',
-    description: 'Review combined image prediction, symptom matches, preventive care tips, and veterinary guidance.'
+    description: 'Review symptom matches, demo image output, agreement/conflict flags, and veterinary guidance.'
   }
 ]
 
 function Home() {
+  const [animals, setAnimals] = useState(OFFLINE_FALLBACK_ANIMALS)
+
+  useEffect(() => {
+    let mounted = true
+    fetchAnimals()
+      .then((data) => {
+        if (mounted && Array.isArray(data) && data.length > 0) {
+          setAnimals(data)
+        }
+      })
+      .catch(() => {
+        // Keep OFFLINE_FALLBACK_ANIMALS when backend is unreachable
+      })
+    return () => {
+      mounted = false
+    }
+  }, [])
+
   return (
     <div className="home-page">
-      {/* Hero Section */}
       <section className="hero-section">
         <div className="hero-content">
           <span className="hero-badge">Academic AI & Veterinary Screening Project</span>
           <h1>AnimalCare AI – Animal Disease Detection System</h1>
           <p className="hero-description">
-            A simple, accessible web application that helps farmers, pet owners, and students perform preliminary animal disease screening using MobileNetV2 image classification and rule-based symptom analysis.
+            A simple, accessible web application for preliminary animal disease screening combining a rule-based clinical symptom checker with a MobileNetV2 image classification demo pipeline.
           </p>
           <div className="hero-actions">
             <Link to="/select-animal" className="btn btn-primary">
@@ -97,7 +65,6 @@ function Home() {
         </div>
       </section>
 
-      {/* About Disease Detection Info Section */}
       <section className="section">
         <div className="section-header">
           <h2>Animal Disease Detection Information</h2>
@@ -107,36 +74,35 @@ function Home() {
         </div>
         <div className="info-grid">
           <div className="info-card">
-            <h3>📷 Image-Based Screening</h3>
+            <h3>📷 Image-Based Screening (Demo)</h3>
             <p>
-              Uses transfer learning with <strong>MobileNetV2</strong> (224 × 224 RGB preprocessing) to classify uploaded photos of cows and buffaloes into supported conditions such as Healthy, Lumpy Skin Disease, and Foot-and-Mouth Disease.
+              Demonstrates transfer learning with <strong>MobileNetV2</strong> (224 × 224 RGB preprocessing) for Cow and Buffalo photos. Not clinically validated until retrained on real labelled photographs.
             </p>
           </div>
           <div className="info-card">
             <h3>🩺 Symptom-Based Analysis</h3>
             <p>
-              Matches observed clinical signs—such as fever, skin nodules, mouth blisters, lameness, and loss of appetite—against verified veterinary symptom rules to highlight possible conditions.
+              Matches observed clinical signs—such as fever, skin nodules, mouth blisters, lameness, and loss of appetite—against weighted veterinary symptom rules to highlight possible conditions.
             </p>
           </div>
           <div className="info-card">
             <h3>⚠️ Honest Uncertainty Handling</h3>
             <p>
-              When image predictions have low confidence or disagree with selected symptoms, the system clearly reports uncertainty rather than guessing or prescribing medications.
+              Rejects blank/unsuitable images, flags low-confidence outputs or image-vs-symptom conflicts, and never prescribes medication dosages.
             </p>
           </div>
         </div>
       </section>
 
-      {/* Supported Animal Categories */}
       <section className="section">
         <div className="section-header">
           <h2>Supported Animal Categories</h2>
           <p>
-            Actual AI image detection is implemented for <strong>Cow</strong> and <strong>Buffalo</strong>. Other categories are shown with their current availability status.
+            Demo image screening is configured for <strong>Cow</strong> and <strong>Buffalo</strong>. Other categories use symptom screening only.
           </p>
         </div>
         <div className="animal-grid">
-          {ANIMAL_CATEGORIES.map((animal) => (
+          {animals.map((animal) => (
             <div
               key={animal.id}
               className={`animal-card ${animal.aiSupported ? 'animal-supported' : 'animal-unsupported'}`}
@@ -146,12 +112,12 @@ function Home() {
                   {animal.emoji}
                 </span>
                 <span className={`status-pill ${animal.aiSupported ? 'pill-active' : 'pill-inactive'}`}>
-                  {animal.statusText}
+                  {animal.badge}
                 </span>
               </div>
               <h3>{animal.name}</h3>
-              <p>{animal.description}</p>
-              <div className="animal-card-Action">
+              <p>{animal.details}</p>
+              <div className="animal-card-action">
                 <Link
                   to={`/select-animal?animal=${animal.id}`}
                   className={`btn btn-small ${animal.aiSupported ? 'btn-primary' : 'btn-outline'}`}
@@ -164,7 +130,6 @@ function Home() {
         </div>
       </section>
 
-      {/* How the Application Works */}
       <section className="section how-it-works-section">
         <div className="section-header">
           <h2>How the Application Works</h2>

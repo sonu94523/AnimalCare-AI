@@ -5,6 +5,7 @@ from typing import Any, Dict, Optional
 
 from flask import Flask, jsonify, send_from_directory
 from flask_cors import CORS
+from sqlalchemy import inspect, text
 
 from backend.database.db import configure_database, db
 from backend.routes.api_routes import api_bp, seed_initial_data
@@ -64,6 +65,11 @@ def create_app(config: Optional[Dict[str, Any]] = None) -> Flask:
 
     with app.app_context():
         db.create_all()
+        # Safe lightweight migration for existing SQLite databases created before details_json
+        existing_cols = {col["name"] for col in inspect(db.engine).get_columns("predictions")}
+        if "details_json" not in existing_cols:
+            db.session.execute(text("ALTER TABLE predictions ADD COLUMN details_json TEXT"))
+            db.session.commit()
         seed_initial_data()
 
     @app.errorhandler(413)

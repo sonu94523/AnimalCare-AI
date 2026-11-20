@@ -44,6 +44,46 @@ A college-level web application for preliminary animal disease screening combini
 | `DELETE` | `/api/history/<id>` | Delete a record and its uploaded file *(requires `X-Admin-Token`)* |
 | `DELETE` | `/api/history` | Clear all history and uploaded files *(requires `X-Admin-Token`)* |
 
+### Example API Request & Response
+**Request (`POST /api/symptoms/submit`):**
+```json
+{
+  "animal": "cow",
+  "symptoms": ["skin_nodules", "fever", "swelling", "reduced_milk"]
+}
+```
+
+**Response (`200 OK`):**
+```json
+{
+  "animalId": "cow",
+  "animal": "Cow",
+  "topConditionId": "lumpy_skin_disease",
+  "topCondition": "Lumpy Skin Disease (LSD)",
+  "matchScorePercent": 80.0,
+  "matchLevel": "High Symptom Match",
+  "combinedDecision": {
+    "mode": "symptom_only",
+    "finalConclusion": "Symptom-Based Indication: Lumpy Skin Disease (LSD)",
+    "combinedConfidence": 80.0
+  }
+}
+```
+
+### Architecture Overview
+```text
+React + Vite Frontend (localhost:5173)
+        │  Axios REST API (CORS restricted to frontend origin)
+        ▼
+Flask Backend (127.0.0.1:5000)
+  ├── backend/domain_data.py              (Single source of truth: animals, symptoms, diseases)
+  ├── backend/services/upload_service.py  (PIL re-encode EXIF strip, 25M pixel cap, 5 MB limit)
+  ├── backend/services/prediction_service.py (Fail-closed 503, OOD blank guard, PyTorch MobileNetV2)
+  ├── backend/services/symptom_service.py (Weighted hallmark clinical symptom rules)
+  ├── backend/services/decision_service.py (Agreement / Conflict / Uncertainty synthesis)
+  └── SQLite (Animal, Disease, UploadRecord, Prediction with full JSON details)
+```
+
 ---
 
 ## Setup & Execution

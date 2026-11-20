@@ -19,6 +19,7 @@ from typing import Any, Dict, Optional, Tuple, Union
 
 import numpy as np
 
+from backend.domain_data import CONDITION_PREVENTION
 from ml.constants import DEFAULT_SAVED_MODELS_DIR, LOW_CONFIDENCE_THRESHOLD, MODEL_STATUS_NOTE
 from ml.model import MobileNetV2DiseaseModel, weights_path_for
 from ml.preprocessing import (
@@ -47,29 +48,17 @@ CONDITION_GUIDANCE: Dict[str, Dict[str, Any]] = {
     "healthy": {
         "diseaseSlug": "healthy",
         "summary": "Demo image output leaned toward the Healthy class (not clinically validated).",
-        "prevention": [
-            "Continue balanced nutrition, clean drinking water, and dry shelter hygiene.",
-            "Follow routine regional vaccination schedules for LSD and FMD.",
-            "Monitor appetite, body temperature, and milk yield daily.",
-        ],
+        "prevention": CONDITION_PREVENTION["healthy"],
     },
     "lumpy_skin_disease": {
-        "diseaseSlug": "lsd",
+        "diseaseSlug": "lumpy_skin_disease",
         "summary": "Demo image output leaned toward Lumpy Skin Disease (not clinically validated; verify with symptoms and a veterinarian).",
-        "prevention": [
-            "If clinical signs (firm skin nodules, fever) are actually present, isolate the animal and contact a veterinarian.",
-            "Control blood-feeding insect vectors (mosquitoes, biting flies, ticks) in sheds.",
-            "Do not act on this unvalidated demo image score alone; report suspected notifiable disease to local veterinary authorities.",
-        ],
+        "prevention": CONDITION_PREVENTION["lumpy_skin_disease"],
     },
     "foot_and_mouth_disease": {
-        "diseaseSlug": "fmd",
+        "diseaseSlug": "foot_and_mouth_disease",
         "summary": "Demo image output leaned toward Foot-and-Mouth Disease (not clinically validated; verify with symptoms and a veterinarian).",
-        "prevention": [
-            "If clinical signs (mouth/hoof blisters, excessive salivation, lameness) are actually present, isolate the animal and consult a veterinary officer immediately.",
-            "Maintain routine footbath and equipment hygiene.",
-            "Do not act on this unvalidated demo image score alone; report suspected FMD to local veterinary authorities.",
-        ],
+        "prevention": CONDITION_PREVENTION["foot_and_mouth_disease"],
     },
 }
 

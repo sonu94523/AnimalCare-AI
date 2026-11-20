@@ -148,6 +148,7 @@ def test_health_animals_diseases_and_model_info(isolated_env):
 
     diseases = client.get("/api/diseases").get_json()["diseases"]
     assert len(diseases) >= 3
+    assert {d["id"] for d in diseases} == {"lumpy_skin_disease", "foot_and_mouth_disease", "healthy"}
 
     info = client.get("/api/model/info").get_json()
     assert info["backbone"] == "MobileNetV2"
@@ -423,9 +424,13 @@ def test_history_admin_auth_and_file_cleanup_on_delete(trained_env):
     # Wrong token must fail with 401
     assert client.delete(f"/api/history/{rec_id}", headers={"X-Admin-Token": "wrong"}).status_code == 401
 
-    # Filter history by animal
+    # Filter history by animal and verify full details payload is persisted for faithful History replay
     filtered = client.get("/api/history?animal=buffalo").get_json()["records"]
-    assert any(r["id"] == rec_id for r in filtered)
+    matched = [r for r in filtered if r["id"] == rec_id]
+    assert len(matched) == 1
+    assert matched[0]["details"]["combinedDecision"] is not None
+    assert matched[0]["details"]["imageResult"]["classProbabilities"]
+    assert matched[0]["details"]["preventionTips"]
 
     # Authenticated DELETE removes both the DB row and the uploaded file
     del_resp = client.delete(f"/api/history/{rec_id}", headers=headers)

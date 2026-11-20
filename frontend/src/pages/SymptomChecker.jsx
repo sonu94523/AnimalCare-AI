@@ -1,106 +1,27 @@
 import React, { useState, useEffect } from 'react'
 import { useSearchParams, useNavigate, useLocation } from 'react-router-dom'
-import { ANIMALS } from './AnimalSelection'
+import { OFFLINE_FALLBACK_ANIMALS, OFFLINE_FALLBACK_SYMPTOMS } from '../data/fallbackData'
 import { fetchSymptoms, submitSymptomForm, submitCombinedPrediction } from '../services/api'
 
-export const SYMPTOM_LIST = [
-  {
-    id: 'fever',
-    label: 'Fever (High body temperature)',
-    category: 'general',
-    animals: ['cow', 'buffalo', 'goat', 'sheep', 'dog', 'cat']
-  },
-  {
-    id: 'loss_of_appetite',
-    label: 'Loss of appetite (Reduced feed intake)',
-    category: 'general',
-    animals: ['cow', 'buffalo', 'goat', 'sheep', 'dog', 'cat']
-  },
-  {
-    id: 'coughing',
-    label: 'Coughing or respiratory distress',
-    category: 'general',
-    animals: ['cow', 'buffalo', 'goat', 'sheep', 'dog', 'cat']
-  },
-  {
-    id: 'diarrhea',
-    label: 'Diarrhea',
-    category: 'general',
-    animals: ['cow', 'buffalo', 'goat', 'sheep', 'dog', 'cat']
-  },
-  {
-    id: 'skin_lesions',
-    label: 'Skin lesions / sores / scabs',
-    category: 'general',
-    animals: ['cow', 'buffalo', 'goat', 'sheep', 'dog', 'cat']
-  },
-  {
-    id: 'swelling',
-    label: 'Swelling (limbs, brisket, or lymph nodes)',
-    category: 'general',
-    animals: ['cow', 'buffalo', 'goat', 'sheep', 'dog', 'cat']
-  },
-  {
-    id: 'weakness',
-    label: 'Weakness / lethargy',
-    category: 'general',
-    animals: ['cow', 'buffalo', 'goat', 'sheep', 'dog', 'cat']
-  },
-  {
-    id: 'difficulty_walking',
-    label: 'Difficulty walking / lameness',
-    category: 'general',
-    animals: ['cow', 'buffalo', 'goat', 'sheep', 'dog', 'cat']
-  },
-  {
-    id: 'reduced_milk',
-    label: 'Reduced milk production',
-    category: 'specific',
-    animals: ['cow', 'buffalo', 'goat', 'sheep']
-  },
-  {
-    id: 'skin_nodules',
-    label: 'Firm round skin nodules (2–5 cm) on head, neck, or body',
-    category: 'specific',
-    animals: ['cow', 'buffalo']
-  },
-  {
-    id: 'mouth_hoof_blisters',
-    label: 'Blisters / vesicles on tongue, gums, muzzle, or hooves',
-    category: 'specific',
-    animals: ['cow', 'buffalo', 'goat', 'sheep']
-  },
-  {
-    id: 'excessive_salivation',
-    label: 'Excessive ropy salivation / drooling',
-    category: 'specific',
-    animals: ['cow', 'buffalo', 'goat', 'sheep', 'dog', 'cat']
-  },
-  {
-    id: 'nasal_ocular_discharge',
-    label: 'Nasal and ocular (watery eye) discharge',
-    category: 'specific',
-    animals: ['cow', 'buffalo', 'goat', 'sheep', 'dog', 'cat']
-  },
-  {
-    id: 'fur_hair_loss',
-    label: 'Patchy hair/fur loss or frequent scratching',
-    category: 'specific',
-    animals: ['dog', 'cat']
-  }
-]
+export const SYMPTOM_LIST = OFFLINE_FALLBACK_SYMPTOMS
 
 function SymptomChecker() {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const location = useLocation()
   const attachedImageState = location.state || {}
-  const initialAnimal = searchParams.get('animal') || 'cow'
-  const [animalId, setAnimalId] = useState(initialAnimal)
-  const [allSymptoms, setAllSymptoms] = useState(SYMPTOM_LIST)
-  const [selectedSymptoms, setSelectedSymptoms] = useState([])
+  const paramAnimal = searchParams.get('animal') || 'cow'
+  const [animalId, setAnimalId] = useState(paramAnimal)
+  const [allSymptoms, setAllSymptoms] = useState(OFFLINE_FALLBACK_SYMPTOMS)
+  const [selectedSymptomIds, setSelectedSymptomIds] = useState([])
   const [submitting, setSubmitting] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
+
+  useEffect(() => {
+    if (OFFLINE_FALLBACK_ANIMALS.some((a) => a.id === paramAnimal)) {
+      setAnimalId(paramAnimal)
+    }
+  }, [paramAnimal])
 
   useEffect(() => {
     let mounted = true
@@ -111,32 +32,32 @@ function SymptomChecker() {
         }
       })
       .catch(() => {
-        // Fallback to SYMPTOM_LIST
+        // Fallback to OFFLINE_FALLBACK_SYMPTOMS
       })
     return () => {
       mounted = false
     }
   }, [])
 
-  const currentAnimal = ANIMALS.find((a) => a.id === animalId) || ANIMALS[0]
+  const currentAnimal = OFFLINE_FALLBACK_ANIMALS.find((a) => a.id === animalId) || OFFLINE_FALLBACK_ANIMALS[0]
 
-  // Filter symptoms applicable to the selected animal
   const availableSymptoms = allSymptoms.filter(
     (s) => !Array.isArray(s.animals) || s.animals.includes(currentAnimal.id)
   )
   const generalSymptoms = availableSymptoms.filter((s) => s.category !== 'specific')
   const specificSymptoms = availableSymptoms.filter((s) => s.category === 'specific')
+  const symptomLabelById = Object.fromEntries(availableSymptoms.map((s) => [s.id, s.label]))
 
-  // Remove any selected symptom that is not applicable when switching animals
+  // Drop selected symptoms that are no longer applicable when switching animals
   useEffect(() => {
-    const allowedLabels = new Set(availableSymptoms.map((s) => s.label))
-    setSelectedSymptoms((prev) => prev.filter((label) => allowedLabels.has(label)))
+    const allowedIds = new Set(availableSymptoms.map((s) => s.id))
+    setSelectedSymptomIds((prev) => prev.filter((id) => allowedIds.has(id)))
   }, [animalId, allSymptoms])
 
-  const toggleSymptom = (symptomLabel) => {
+  const toggleSymptom = (symptomId) => {
     setErrorMsg('')
-    setSelectedSymptoms((prev) =>
-      prev.includes(symptomLabel) ? prev.filter((s) => s !== symptomLabel) : [...prev, symptomLabel]
+    setSelectedSymptomIds((prev) =>
+      prev.includes(symptomId) ? prev.filter((s) => s !== symptomId) : [...prev, symptomId]
     )
   }
 
@@ -149,7 +70,7 @@ function SymptomChecker() {
       return
     }
 
-    if (selectedSymptoms.length === 0) {
+    if (selectedSymptomIds.length === 0) {
       setErrorMsg('Form validation error: Please select at least one observed symptom.')
       return
     }
@@ -163,7 +84,7 @@ function SymptomChecker() {
       if (hasAttachedImage) {
         const combinedResp = await submitCombinedPrediction({
           animal: currentAnimal.id,
-          symptoms: selectedSymptoms,
+          symptoms: selectedSymptomIds,
           uploadId: attachedImageState.uploadId
         })
         const imgRes = combinedResp.imageResult || attachedImageState.predictionResult
@@ -187,7 +108,7 @@ function SymptomChecker() {
             modelValidated: imgRes.modelValidated,
             trainingData: imgRes.trainingData,
             modelStatusNote: imgRes.modelStatusNote,
-            symptoms: symRes.selectedSymptoms || selectedSymptoms,
+            symptoms: symRes.selectedSymptoms || selectedSymptomIds.map((id) => symptomLabelById[id] || id),
             symptomTopCondition: symRes.topCondition,
             symptomMatchScore: symRes.matchScorePercent,
             symptomMatchLevel: symRes.matchLevel,
@@ -200,7 +121,7 @@ function SymptomChecker() {
         return
       }
 
-      const response = await submitSymptomForm(currentAnimal.id, selectedSymptoms)
+      const response = await submitSymptomForm(currentAnimal.id, selectedSymptomIds)
       navigate('/results', {
         state: {
           animal: currentAnimal.name,
@@ -211,7 +132,7 @@ function SymptomChecker() {
             ? 'No image uploaded (Symptom-only check)'
             : `AI Image Detection unavailable for ${currentAnimal.name}`,
           confidence: null,
-          symptoms: response.selectedSymptoms || selectedSymptoms,
+          symptoms: response.selectedSymptoms || selectedSymptomIds.map((id) => symptomLabelById[id] || id),
           symptomTopCondition: response.topCondition,
           symptomMatchScore: response.matchScorePercent,
           symptomMatchLevel: response.matchLevel,
@@ -242,10 +163,10 @@ function SymptomChecker() {
       </div>
 
       <form className="form-card" onSubmit={handleAnalyzeSymptoms}>
-        {attachedImageState.predictionResult && currentAnimal.aiSupported && (
+        {attachedImageState.uploadId && attachedImageState.predictionResult && currentAnimal.aiSupported && (
           <div className="notice-success" style={{ marginBottom: '1.25rem' }}>
             <strong>✓ Uploaded Image Attached for Combined Screening:</strong>{' '}
-            {attachedImageState.imageName || 'Animal photo'} — MobileNetV2 classified as{' '}
+            {attachedImageState.imageName || 'Animal photo'} — MobileNetV2 demo output:{' '}
             <strong>{attachedImageState.predictionResult.imagePrediction}</strong> (
             {attachedImageState.predictionResult.confidence}% confidence). Select observed clinical symptoms below to cross-check visual and symptomatic evidence.
           </div>
@@ -261,9 +182,9 @@ function SymptomChecker() {
               setErrorMsg('')
             }}
           >
-            {ANIMALS.map((a) => (
+            {OFFLINE_FALLBACK_ANIMALS.map((a) => (
               <option key={a.id} value={a.id}>
-                {a.emoji} {a.name} ({a.aiSupported ? 'AI + Symptom Check' : 'Symptom Reference Only'})
+                {a.emoji} {a.name} ({a.aiSupported ? 'Demo Image + Symptom Check' : 'Symptom Reference Only'})
               </option>
             ))}
           </select>
@@ -273,7 +194,7 @@ function SymptomChecker() {
           <label>2. General Clinical Symptoms</label>
           <div className="symptom-checkbox-grid">
             {generalSymptoms.map((symptom) => {
-              const checked = selectedSymptoms.includes(symptom.label)
+              const checked = selectedSymptomIds.includes(symptom.id)
               return (
                 <label
                   key={symptom.id}
@@ -282,7 +203,7 @@ function SymptomChecker() {
                   <input
                     type="checkbox"
                     checked={checked}
-                    onChange={() => toggleSymptom(symptom.label)}
+                    onChange={() => toggleSymptom(symptom.id)}
                   />
                   <span>{symptom.label}</span>
                 </label>
@@ -298,7 +219,7 @@ function SymptomChecker() {
             </label>
             <div className="symptom-checkbox-grid">
               {specificSymptoms.map((symptom) => {
-                const checked = selectedSymptoms.includes(symptom.label)
+                const checked = selectedSymptomIds.includes(symptom.id)
                 return (
                   <label
                     key={symptom.id}
@@ -307,7 +228,7 @@ function SymptomChecker() {
                     <input
                       type="checkbox"
                       checked={checked}
-                      onChange={() => toggleSymptom(symptom.label)}
+                      onChange={() => toggleSymptom(symptom.id)}
                     />
                     <span>{symptom.label}</span>
                   </label>
@@ -317,32 +238,31 @@ function SymptomChecker() {
           </div>
         )}
 
-        {/* Selected Symptoms Display Panel */}
         <div className="selected-symptoms-box">
           <div className="selected-symptoms-header">
-            <strong>Selected Symptoms ({selectedSymptoms.length}):</strong>
-            {selectedSymptoms.length > 0 && (
+            <strong>Selected Symptoms ({selectedSymptomIds.length}):</strong>
+            {selectedSymptomIds.length > 0 && (
               <button
                 type="button"
                 className="link-clear-btn"
-                onClick={() => setSelectedSymptoms([])}
+                onClick={() => setSelectedSymptomIds([])}
               >
                 Clear All
               </button>
             )}
           </div>
-          {selectedSymptoms.length === 0 ? (
+          {selectedSymptomIds.length === 0 ? (
             <p className="result-muted">No symptoms selected yet. Click the checkboxes above to add symptoms.</p>
           ) : (
             <div className="symptom-tags">
-              {selectedSymptoms.map((sym) => (
-                <span key={sym} className="symptom-tag">
-                  {sym}
+              {selectedSymptomIds.map((symId) => (
+                <span key={symId} className="symptom-tag">
+                  {symptomLabelById[symId] || symId}
                   <button
                     type="button"
                     className="tag-remove-btn"
-                    onClick={() => toggleSymptom(sym)}
-                    aria-label={`Remove ${sym}`}
+                    onClick={() => toggleSymptom(symId)}
+                    aria-label={`Remove ${symptomLabelById[symId] || symId}`}
                   >
                     ×
                   </button>
@@ -362,7 +282,7 @@ function SymptomChecker() {
             type="button"
             className="btn btn-outline"
             onClick={() => {
-              setSelectedSymptoms([])
+              setSelectedSymptomIds([])
               setErrorMsg('')
             }}
           >
