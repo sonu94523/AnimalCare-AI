@@ -14,94 +14,106 @@ function Results() {
     symptomAnalysis: null
   }
 
+  const comb = resultData.combinedDecision
+  const hasSymptoms = Array.isArray(resultData.symptoms) && resultData.symptoms.length > 0
+  const hasProbs = Array.isArray(resultData.classProbabilities) && resultData.classProbabilities.length > 0
+  const hasMatchedConds =
+    Array.isArray(resultData.matchedConditions) && resultData.matchedConditions.length > 0
+
+  // Determine the single primary headline, subtitle, score, and warning state
+  const isWarning = Boolean(
+    comb?.hasConflict || comb?.isUncertain || resultData.isLowConfidence
+  )
+
+  const primaryHeadline =
+    comb?.finalConclusion ||
+    resultData.symptomTopCondition ||
+    resultData.imagePrediction ||
+    'Preliminary Screening Complete'
+
+  const primaryScore =
+    comb?.combinedConfidence ??
+    resultData.confidence ??
+    resultData.symptomMatchScore ??
+    null
+
+  const primarySubtitle =
+    resultData.uncertaintyNotice ||
+    comb?.explanation ||
+    resultData.symptomAnalysis ||
+    'Review the detection metrics and preventive care steps below.'
+
+  const preventionList =
+    Array.isArray(resultData.preventionTips) && resultData.preventionTips.length > 0
+      ? resultData.preventionTips
+      : [
+          'Isolate any animal showing fever, skin nodules, or mouth lesions from the healthy herd.',
+          'Maintain clean water, dry bedding, and disinfected feeding equipment.',
+          'Control biting insects (flies, mosquitoes, ticks) around cattle sheds.'
+        ]
+
   return (
     <div className="page-container">
       <div className="page-header">
-        <h1>Preliminary Screening Results</h1>
-        <p>
-          Review the image classification output, symptom analysis, and general preventive guidance below.
-        </p>
+        <h1>Screening Result</h1>
+        <p>Clear summary of your image and symptom check.</p>
       </div>
 
-      <div className="results-grid">
-        {/* Left column: Animal & Uploaded Image */}
-        <div className="result-card">
-          <h3>Animal & Input Summary</h3>
-          <p className="result-item">
-            <strong>Animal Category:</strong> {resultData.animal}
-          </p>
-          {resultData.previewUrl ? (
-            <div className="image-preview-box">
-              <p>
-                <strong>Uploaded Image:</strong> {resultData.imageName}
-              </p>
-              <img src={resultData.previewUrl} alt="Uploaded animal" className="preview-img" />
-            </div>
-          ) : (
-            <p className="result-muted">No image uploaded for this session.</p>
-          )}
-
-          <div className="result-subsection">
-            <h4>Observed Symptoms Selected ({resultData.symptoms?.length || 0})</h4>
-            {resultData.symptoms && resultData.symptoms.length > 0 ? (
-              <ul className="result-list">
-                {resultData.symptoms.map((sym, idx) => (
-                  <li key={idx}>{sym}</li>
-                ))}
-              </ul>
-            ) : (
-              <p className="result-muted">No symptoms selected.</p>
-            )}
+      {/* Top Hero Summary Card */}
+      <div className={`result-hero-card ${isWarning ? 'result-hero-warn' : ''}`}>
+        <div className="result-hero-main">
+          <div className="result-hero-label">
+            {comb?.agreementStatus || (isWarning ? '⚠️ Preliminary Notice' : '✓ Screening Result')}
           </div>
+          <div className="result-hero-title">{primaryHeadline}</div>
+          <p className="result-hero-subtitle">{primarySubtitle}</p>
         </div>
 
-        {/* Right column: Prediction & Guidance */}
+        {primaryScore !== null && primaryScore !== undefined && (
+          <div className="result-score-badge">
+            <span className="result-score-number">{primaryScore}%</span>
+            <span className="result-score-caption">Match Score</span>
+          </div>
+        )}
+      </div>
+
+      {/* Two-Column Clean Breakdown */}
+      <div className="results-grid">
+        {/* Left Card: Detection Evidence */}
         <div className="result-card">
-          <h3>Screening Analysis</h3>
+          <h3>1. Detection Breakdown</h3>
 
-          {resultData.combinedDecision && (
-            <div
-              className={
-                resultData.combinedDecision.hasConflict || resultData.combinedDecision.isUncertain
-                  ? 'notice-warning'
-                  : 'notice-success'
-              }
-              style={{ marginBottom: '1rem' }}
-            >
-              <p style={{ marginBottom: '0.35rem' }}>
-                <strong>Final Preliminary Assessment:</strong>{' '}
-                {resultData.combinedDecision.finalConclusion}
-              </p>
-              <p style={{ marginBottom: '0.35rem' }}>
-                <strong>Agreement / Evidence Status:</strong>{' '}
-                {resultData.combinedDecision.agreementStatus} (Combined Score:{' '}
-                {resultData.combinedDecision.combinedConfidence}%)
-              </p>
-              <p style={{ margin: 0 }}>{resultData.combinedDecision.explanation}</p>
+          <div className="result-kpi-row">
+            <div className="result-kpi-box">
+              <span className="result-kpi-label">Animal</span>
+              <span className="result-kpi-value">{resultData.animal}</span>
             </div>
-          )}
-
-          <div className="result-box">
-            <p>
-              <strong>Image Prediction (MobileNetV2):</strong> {resultData.imagePrediction}
-            </p>
-            <p>
-              <strong>Model Confidence:</strong>{' '}
-              {resultData.confidence !== null && resultData.confidence !== undefined
-                ? `${resultData.confidence}%`
-                : 'N/A'}
-            </p>
+            <div className="result-kpi-box">
+              <span className="result-kpi-label">Image Check</span>
+              <span className="result-kpi-value">
+                {resultData.previewUrl || resultData.confidence !== null
+                  ? resultData.imagePrediction
+                  : 'Not Uploaded'}
+              </span>
+            </div>
+            <div className="result-kpi-box">
+              <span className="result-kpi-label">Symptoms Checked</span>
+              <span className="result-kpi-value">
+                {hasSymptoms ? `${resultData.symptoms.length} Selected` : 'None'}
+              </span>
+            </div>
           </div>
 
-          {resultData.isLowConfidence && resultData.uncertaintyNotice && (
-            <div className="notice-warning" style={{ marginBottom: '1rem' }}>
-              <strong>⚠️ Low Confidence / Uncertain Result:</strong> {resultData.uncertaintyNotice}
+          {resultData.previewUrl && (
+            <div className="image-preview-box" style={{ width: '100%', marginBottom: '1rem' }}>
+              <span className="result-kpi-label">Uploaded Photo ({resultData.imageName})</span>
+              <img src={resultData.previewUrl} alt="Uploaded animal" className="preview-img" />
             </div>
           )}
 
-          {Array.isArray(resultData.classProbabilities) && resultData.classProbabilities.length > 0 && (
-            <div className="result-subsection" style={{ marginBottom: '1rem' }}>
-              <h4>MobileNetV2 Class Probability Breakdown</h4>
+          {hasProbs && (
+            <div className="result-subsection" style={{ marginTop: '0.5rem' }}>
+              <h4>Image Model Probabilities</h4>
               <div className="prob-list">
                 {resultData.classProbabilities.map((item) => (
                   <div key={item.classId} className="prob-item">
@@ -121,36 +133,27 @@ function Results() {
             </div>
           )}
 
-          <div className="result-box">
-            {resultData.symptomTopCondition && (
-              <p>
-                <strong>Rule-Based Symptom Match:</strong> {resultData.symptomTopCondition}{' '}
-                {resultData.symptomMatchScore !== undefined && resultData.symptomMatchScore !== null
-                  ? `(${resultData.symptomMatchScore}% — ${resultData.symptomMatchLevel || 'Rule Match'})`
-                  : ''}
-              </p>
-            )}
-            <p>
-              <strong>Screening & Symptom Analysis:</strong>{' '}
-              {resultData.symptomAnalysis
-                ? resultData.symptomAnalysis
-                : resultData.symptoms && resultData.symptoms.length > 0
-                ? 'Preliminary symptom match evaluated against clinical rules'
-                : 'No symptoms provided for analysis'}
-            </p>
-          </div>
+          {hasSymptoms && (
+            <div className="result-subsection">
+              <h4>Observed Symptoms</h4>
+              <div className="symptom-tags" style={{ marginTop: '0.4rem' }}>
+                {resultData.symptoms.map((sym, idx) => (
+                  <span key={idx} className="symptom-tag">
+                    {sym}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
 
-          {Array.isArray(resultData.matchedConditions) && resultData.matchedConditions.length > 0 && (
-            <div className="result-subsection" style={{ marginBottom: '1rem' }}>
-              <h4>Rule-Based Condition Matches</h4>
+          {hasMatchedConds && (
+            <div className="result-subsection">
+              <h4>Symptom Rule Matches</h4>
               <div className="prob-list">
                 {resultData.matchedConditions.map((cond) => (
                   <div key={cond.conditionId} className="prob-item">
                     <div className="prob-item-header">
-                      <span>
-                        {cond.conditionName} ({cond.matchedSymptomCount} symptom
-                        {cond.matchedSymptomCount === 1 ? '' : 's'})
-                      </span>
+                      <span>{cond.conditionName}</span>
                       <span>{cond.matchScorePercent}%</span>
                     </div>
                     <div className="prob-bar-track">
@@ -164,24 +167,42 @@ function Results() {
               </div>
             </div>
           )}
+        </div>
 
-          <div className="result-subsection">
-            <h4>Basic Preventive Guidance</h4>
-            <ul className="result-list">
-              {Array.isArray(resultData.preventionTips) && resultData.preventionTips.length > 0 ? (
-                resultData.preventionTips.map((tip, idx) => <li key={idx}>{tip}</li>)
-              ) : (
-                <>
-                  <li>Isolate any animal showing fever, skin nodules, or mouth lesions from the healthy herd.</li>
-                  <li>Maintain clean water, dry bedding, and disinfected feeding equipment.</li>
-                  <li>Control biting insects (flies, mosquitoes, ticks) around cattle sheds.</li>
-                </>
-              )}
-            </ul>
+        {/* Right Card: Recommended Action Steps */}
+        <div className="result-card">
+          <h3>2. Recommended Next Steps</h3>
+          <div className="steps-grid" style={{ gridTemplateColumns: '1fr', gap: '0.75rem', marginBottom: '1rem' }}>
+            {preventionList.map((tip, idx) => (
+              <div
+                key={idx}
+                className="result-box"
+                style={{
+                  margin: 0,
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '0.75rem'
+                }}
+              >
+                <span
+                  className="step-number"
+                  style={{
+                    margin: 0,
+                    width: '28px',
+                    height: '28px',
+                    fontSize: '0.85rem',
+                    flexShrink: 0
+                  }}
+                >
+                  {idx + 1}
+                </span>
+                <span style={{ fontSize: '0.94rem', color: '#1f2937' }}>{tip}</span>
+              </div>
+            ))}
           </div>
 
           <div className="vet-advisory-box">
-            <strong>Veterinary Recommendation:</strong> This system provides preliminary academic screening only and is not a confirmed veterinary diagnosis. Do not self-medicate; consult a qualified veterinarian for examination and treatment.
+            <strong>Veterinary Note:</strong> This tool provides preliminary academic screening only. Please consult a qualified veterinarian before starting treatment.
           </div>
         </div>
       </div>
@@ -191,10 +212,10 @@ function Results() {
           Start New Detection
         </Link>
         <Link to="/diseases" className="btn btn-secondary">
-          View Disease Reference Info
+          Disease Reference Guide
         </Link>
         <Link to="/history" className="btn btn-outline">
-          View Prediction History
+          Prediction History
         </Link>
       </div>
     </div>

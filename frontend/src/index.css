@@ -539,6 +539,117 @@ a {
 }
 
 /* Results Page */
+.result-hero-card {
+  background-color: #ffffff;
+  border-radius: 12px;
+  padding: 1.5rem 1.75rem;
+  border: 2px solid #bbf7d0;
+  margin-bottom: 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.result-hero-card.result-hero-warn {
+  border-color: #fde68a;
+  background-color: #fffdf5;
+}
+
+.result-hero-main {
+  flex: 1;
+  min-width: 260px;
+}
+
+.result-hero-label {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 700;
+  color: #6b7280;
+  margin-bottom: 0.25rem;
+}
+
+.result-hero-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #14532d;
+  margin-bottom: 0.35rem;
+}
+
+.result-hero-warn .result-hero-title {
+  color: #92400e;
+}
+
+.result-hero-subtitle {
+  font-size: 0.94rem;
+  color: #4b5563;
+  margin: 0;
+}
+
+.result-score-badge {
+  background-color: #f0fdf4;
+  border: 1px solid #86efac;
+  border-radius: 10px;
+  padding: 0.75rem 1.25rem;
+  text-align: center;
+  min-width: 130px;
+}
+
+.result-hero-warn .result-score-badge {
+  background-color: #fef3c7;
+  border-color: #fcd34d;
+}
+
+.result-score-number {
+  display: block;
+  font-size: 1.55rem;
+  font-weight: 800;
+  color: #166534;
+  line-height: 1.1;
+}
+
+.result-hero-warn .result-score-number {
+  color: #92400e;
+}
+
+.result-score-caption {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #4b5563;
+}
+
+.result-kpi-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.result-kpi-box {
+  background-color: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 0.75rem 0.95rem;
+}
+
+.result-kpi-label {
+  display: block;
+  font-size: 0.76rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: #6b7280;
+  margin-bottom: 0.2rem;
+}
+
+.result-kpi-value {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #111827;
+}
+
 .results-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
