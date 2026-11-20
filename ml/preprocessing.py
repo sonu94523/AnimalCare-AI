@@ -15,8 +15,13 @@ import json
 import os
 import random
 import shutil
+import sys
 import tempfile
 from typing import Dict, List, Optional, Tuple, Union
+
+_BASE_SITE_PACKAGES = os.path.join(getattr(sys, "base_prefix", sys.prefix), "Lib", "site-packages")
+if os.path.isdir(_BASE_SITE_PACKAGES) and _BASE_SITE_PACKAGES not in sys.path:
+    sys.path.append(_BASE_SITE_PACKAGES)
 
 import numpy as np
 from PIL import Image, ImageEnhance

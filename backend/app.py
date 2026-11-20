@@ -4,10 +4,14 @@ import tempfile
 from flask import Flask, jsonify, send_from_directory
 from flask_cors import CORS
 
-# Ensure backend directory is on sys.path when imported or run directly
+# Ensure backend directory and base Python site-packages (for ML libraries) are on sys.path
 BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
+
+_BASE_SITE_PACKAGES = os.path.join(getattr(sys, "base_prefix", sys.prefix), "Lib", "site-packages")
+if os.path.isdir(_BASE_SITE_PACKAGES) and _BASE_SITE_PACKAGES not in sys.path:
+    sys.path.append(_BASE_SITE_PACKAGES)
 
 from database.db import configure_database, db
 from routes.api_routes import api_bp, seed_initial_data

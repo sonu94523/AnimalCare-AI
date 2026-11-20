@@ -7,14 +7,22 @@ db = SQLAlchemy()
 
 
 def _is_sqlite_path_writable(db_path):
+    conn = None
     try:
         conn = sqlite3.connect(db_path)
         conn.execute("CREATE TABLE IF NOT EXISTS _write_check (id INTEGER)")
+        conn.execute("INSERT INTO _write_check (id) VALUES (1)")
+        conn.execute("DELETE FROM _write_check")
         conn.commit()
-        conn.close()
         return True
     except Exception:
         return False
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 def configure_database(app, backend_dir):

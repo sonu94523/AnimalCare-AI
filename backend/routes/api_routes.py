@@ -486,7 +486,7 @@ def predict_combined_endpoint():
     saved_record = None
     if save_history_flag:
         img_pred_str = (
-            image_result["imagePrediction"]
+            (image_result.get("imagePrediction") or image_result.get("predictedLabel") or "N/A")
             if image_result
             else (
                 "No image uploaded (Symptom-only check)"
