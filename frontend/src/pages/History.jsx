@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   API_BASE_URL,
@@ -12,27 +12,34 @@ function History() {
   const navigate = useNavigate()
   const [records, setRecords] = useState([])
   const [animalFilter, setAnimalFilter] = useState('all')
+  const [refreshTick, setRefreshTick] = useState(0)
   const [adminToken, setAdminToken] = useState(import.meta.env.VITE_ADMIN_TOKEN || '')
   const [loading, setLoading] = useState(true)
   const [statusMsg, setStatusMsg] = useState('')
   const [errorMsg, setErrorMsg] = useState('')
 
-  const loadRecords = useCallback(async (filterVal = animalFilter) => {
-    setLoading(true)
-    setErrorMsg('')
-    try {
-      const data = await fetchHistory(filterVal)
-      setRecords(Array.isArray(data) ? data : [])
-    } catch {
-      setRecords([])
-    } finally {
-      setLoading(false)
-    }
-  }, [animalFilter])
-
   useEffect(() => {
-    loadRecords(animalFilter)
-  }, [animalFilter, loadRecords])
+    let active = true
+    fetchHistory(animalFilter)
+      .then((data) => {
+        if (active) {
+          setRecords(Array.isArray(data) ? data : [])
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setRecords([])
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setLoading(false)
+        }
+      })
+    return () => {
+      active = false
+    }
+  }, [animalFilter, refreshTick])
 
   const ensureAdminToken = () => {
     if (adminToken.trim()) return adminToken.trim()
@@ -154,8 +161,10 @@ function History() {
               style={{ width: 'auto', minWidth: '180px' }}
               value={animalFilter}
               onChange={(e) => {
+                setLoading(true)
                 setAnimalFilter(e.target.value)
                 setStatusMsg('')
+                setErrorMsg('')
               }}
             >
               <option value="all">All Animals</option>
@@ -171,7 +180,11 @@ function History() {
             <button
               type="button"
               className="btn btn-outline btn-small"
-              onClick={() => loadRecords(animalFilter)}
+              onClick={() => {
+                setLoading(true)
+                setErrorMsg('')
+                setRefreshTick((t) => t + 1)
+              }}
               disabled={loading}
             >
               Refresh

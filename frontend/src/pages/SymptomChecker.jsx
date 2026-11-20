@@ -6,22 +6,18 @@ import { fetchSymptoms, submitSymptomForm, submitCombinedPrediction } from '../s
 export const SYMPTOM_LIST = OFFLINE_FALLBACK_SYMPTOMS
 
 function SymptomChecker() {
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
   const location = useLocation()
   const attachedImageState = location.state || {}
   const paramAnimal = searchParams.get('animal') || 'cow'
-  const [animalId, setAnimalId] = useState(paramAnimal)
+  const animalId = OFFLINE_FALLBACK_ANIMALS.some((a) => a.id === paramAnimal)
+    ? paramAnimal
+    : OFFLINE_FALLBACK_ANIMALS[0].id
   const [allSymptoms, setAllSymptoms] = useState(OFFLINE_FALLBACK_SYMPTOMS)
-  const [selectedSymptomIds, setSelectedSymptomIds] = useState([])
+  const [rawSelectedIds, setSelectedSymptomIds] = useState([])
   const [submitting, setSubmitting] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
-
-  useEffect(() => {
-    if (OFFLINE_FALLBACK_ANIMALS.some((a) => a.id === paramAnimal)) {
-      setAnimalId(paramAnimal)
-    }
-  }, [paramAnimal])
 
   useEffect(() => {
     let mounted = true
@@ -47,12 +43,8 @@ function SymptomChecker() {
   const generalSymptoms = availableSymptoms.filter((s) => s.category !== 'specific')
   const specificSymptoms = availableSymptoms.filter((s) => s.category === 'specific')
   const symptomLabelById = Object.fromEntries(availableSymptoms.map((s) => [s.id, s.label]))
-
-  // Drop selected symptoms that are no longer applicable when switching animals
-  useEffect(() => {
-    const allowedIds = new Set(availableSymptoms.map((s) => s.id))
-    setSelectedSymptomIds((prev) => prev.filter((id) => allowedIds.has(id)))
-  }, [animalId, allSymptoms])
+  const allowedIds = new Set(availableSymptoms.map((s) => s.id))
+  const selectedSymptomIds = rawSelectedIds.filter((id) => allowedIds.has(id))
 
   const toggleSymptom = (symptomId) => {
     setErrorMsg('')
@@ -178,7 +170,7 @@ function SymptomChecker() {
             className="form-select"
             value={animalId}
             onChange={(e) => {
-              setAnimalId(e.target.value)
+              setSearchParams({ animal: e.target.value }, { replace: true })
               setErrorMsg('')
             }}
           >

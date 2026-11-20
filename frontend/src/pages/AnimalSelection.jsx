@@ -6,11 +6,9 @@ import { fetchAnimals } from '../services/api'
 export const ANIMALS = OFFLINE_FALLBACK_ANIMALS
 
 function AnimalSelection() {
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
-  const initialAnimal = searchParams.get('animal') || 'cow'
   const [animalsList, setAnimalsList] = useState(OFFLINE_FALLBACK_ANIMALS)
-  const [selectedId, setSelectedId] = useState(initialAnimal)
 
   useEffect(() => {
     let mounted = true
@@ -28,12 +26,9 @@ function AnimalSelection() {
     }
   }, [])
 
-  useEffect(() => {
-    const paramAnimal = searchParams.get('animal')
-    if (paramAnimal && animalsList.some((a) => a.id === paramAnimal)) {
-      setSelectedId(paramAnimal)
-    }
-  }, [searchParams, animalsList])
+  const paramAnimal = searchParams.get('animal') || 'cow'
+  const selectedId = animalsList.some((a) => a.id === paramAnimal) ? paramAnimal : animalsList[0].id
+  const setSelectedId = (id) => setSearchParams({ animal: id }, { replace: true })
 
   const selectedAnimal = animalsList.find((a) => a.id === selectedId) || animalsList[0]
 

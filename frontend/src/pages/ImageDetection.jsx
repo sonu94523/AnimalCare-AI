@@ -8,21 +8,15 @@ const ALLOWED_EXTENSIONS = ['jpg', 'jpeg', 'png']
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024 // 5 MB
 
 function ImageDetection() {
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
   const paramAnimal = searchParams.get('animal') || 'cow'
-  const [animalId, setAnimalId] = useState(paramAnimal)
+  const animalId = ANIMALS.some((a) => a.id === paramAnimal) ? paramAnimal : ANIMALS[0].id
   const [selectedFile, setSelectedFile] = useState(null)
   const [previewUrl, setPreviewUrl] = useState('')
   const [uploading, setUploading] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
   const [successMsg, setSuccessMsg] = useState('')
-
-  useEffect(() => {
-    if (ANIMALS.some((a) => a.id === paramAnimal)) {
-      setAnimalId(paramAnimal)
-    }
-  }, [paramAnimal])
 
   useEffect(() => {
     return () => {
@@ -247,7 +241,7 @@ function ImageDetection() {
             className="form-select"
             value={animalId}
             onChange={(e) => {
-              setAnimalId(e.target.value)
+              setSearchParams({ animal: e.target.value }, { replace: true })
               setErrorMsg('')
               setSuccessMsg('')
             }}
