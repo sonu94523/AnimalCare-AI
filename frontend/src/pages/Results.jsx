@@ -68,8 +68,8 @@ function Results() {
       : 'Combined Score'
 
   const primarySubtitle =
-    resultData.uncertaintyNotice ||
     comb?.explanation ||
+    resultData.uncertaintyNotice ||
     resultData.symptomAnalysis ||
     'Review the detection metrics and preventive care steps below.'
 

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { useSearchParams, useNavigate, Link } from 'react-router-dom'
-import { OFFLINE_FALLBACK_ANIMALS as ANIMALS } from '../data/fallbackData'
-import { uploadAnimalImage, predictAnimalImage } from '../services/api'
+import { OFFLINE_FALLBACK_ANIMALS } from '../data/fallbackData'
+import { fetchAnimals, uploadAnimalImage, predictAnimalImage } from '../services/api'
 
 const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/jpg', 'image/png']
 const ALLOWED_EXTENSIONS = ['jpg', 'jpeg', 'png']
@@ -10,8 +10,26 @@ const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024 // 5 MB
 function ImageDetection() {
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
+  const [animals, setAnimals] = useState(OFFLINE_FALLBACK_ANIMALS)
+
+  useEffect(() => {
+    let mounted = true
+    fetchAnimals()
+      .then((data) => {
+        if (mounted && Array.isArray(data) && data.length > 0) {
+          setAnimals(data)
+        }
+      })
+      .catch(() => {
+        // Fallback to OFFLINE_FALLBACK_ANIMALS when backend is unreachable
+      })
+    return () => {
+      mounted = false
+    }
+  }, [])
+
   const paramAnimal = searchParams.get('animal') || 'cow'
-  const animalId = ANIMALS.some((a) => a.id === paramAnimal) ? paramAnimal : ANIMALS[0].id
+  const animalId = animals.some((a) => a.id === paramAnimal) ? paramAnimal : animals[0].id
   const [selectedFile, setSelectedFile] = useState(null)
   const [previewUrl, setPreviewUrl] = useState('')
   const [uploading, setUploading] = useState(false)
@@ -26,7 +44,7 @@ function ImageDetection() {
     }
   }, [previewUrl])
 
-  const currentAnimal = ANIMALS.find((a) => a.id === animalId) || ANIMALS[0]
+  const currentAnimal = animals.find((a) => a.id === animalId) || animals[0]
 
   const updatePreview = (file) => {
     if (previewUrl) {
@@ -246,7 +264,7 @@ function ImageDetection() {
               setSuccessMsg('')
             }}
           >
-            {ANIMALS.map((a) => (
+            {animals.map((a) => (
               <option key={a.id} value={a.id}>
                 {a.emoji} {a.name} ({a.aiSupported ? 'Demo Image + Symptoms' : 'AI Unavailable'})
               </option>

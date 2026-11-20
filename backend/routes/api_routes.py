@@ -123,6 +123,10 @@ def _run_image_upload_and_predict(animal_id: str) -> Tuple[Optional[Dict[str, An
         delete_uploaded_file(upload_folder, upload_info["imagePath"])
         logger.warning("Image prediction unavailable (503): %s", exc)
         return None, (jsonify({"error": str(exc)}), 503)
+    except Exception:
+        delete_uploaded_file(upload_folder, upload_info["imagePath"])
+        logger.exception("Unexpected error during image prediction for '%s'", upload_info["filename"])
+        return None, (jsonify({"error": "Image prediction failed due to an internal error."}), 500)
 
     upload_id = uuid.uuid4().hex
     upload_record = UploadRecord(
@@ -146,7 +150,7 @@ def health_check():
     return jsonify({
         "status": "ok",
         "service": "AnimalCare AI Backend",
-        "database": "sqlite",
+        "database": db.engine.dialect.name,
         "aiSupportedAnimals": sorted(list(AI_SUPPORTED_ANIMALS)),
         "modelLoaded": is_model_available(models_dir),
         "modelValidated": False,
@@ -361,6 +365,27 @@ def predict_combined_endpoint():
                      "Upload an image file or pass the server-issued uploadId."
         }), 400
 
+    # 1. Validate symptoms FIRST so an invalid symptom payload never saves an orphaned upload file.
+    raw_symptoms = data.get("symptoms")
+    if raw_symptoms is None and request.form.get("symptoms"):
+        form_sym = request.form.get("symptoms", "")
+        try:
+            raw_symptoms = json.loads(form_sym)
+        except json.JSONDecodeError:
+            raw_symptoms = [s.strip() for s in form_sym.split(",") if s.strip()]
+
+    symptom_result = None
+    resolved_labels = []
+    if raw_symptoms is not None:
+        if not isinstance(raw_symptoms, list):
+            return jsonify({"error": "Field 'symptoms' must be a list."}), 400
+        if len(raw_symptoms) > 0:
+            resolved_ids, resolved_labels, err_msg = resolve_symptom_ids(animal_id, raw_symptoms)
+            if err_msg:
+                return jsonify({"error": err_msg}), 400
+            symptom_result = analyze_symptoms(animal_id, resolved_ids)
+
+    # 2. Resolve image prediction strictly from server-side uploadId or a newly uploaded file
     image_result = None
     image_path = None
     original_name = None
@@ -386,25 +411,6 @@ def predict_combined_endpoint():
         image_result = json.loads(upload_rec.prediction_json)
         image_path = upload_rec.image_path
         original_name = upload_rec.original_name
-
-    raw_symptoms = data.get("symptoms")
-    if raw_symptoms is None and request.form.get("symptoms"):
-        form_sym = request.form.get("symptoms", "")
-        try:
-            raw_symptoms = json.loads(form_sym)
-        except json.JSONDecodeError:
-            raw_symptoms = [s.strip() for s in form_sym.split(",") if s.strip()]
-
-    symptom_result = None
-    resolved_labels = []
-    if raw_symptoms is not None:
-        if not isinstance(raw_symptoms, list):
-            return jsonify({"error": "Field 'symptoms' must be a list."}), 400
-        if len(raw_symptoms) > 0:
-            resolved_ids, resolved_labels, err_msg = resolve_symptom_ids(animal_id, raw_symptoms)
-            if err_msg:
-                return jsonify({"error": err_msg}), 400
-            symptom_result = analyze_symptoms(animal_id, resolved_ids)
 
     if not image_result and not symptom_result:
         return jsonify({
@@ -515,13 +521,15 @@ def clear_all_history():
         return auth_err
 
     upload_folder = current_app.config["UPLOAD_FOLDER"]
-    all_records = Prediction.query.all()
-    image_paths = {r.image_path for r in all_records if r.image_path}
+    pred_paths = {r.image_path for r in Prediction.query.all() if r.image_path}
+    upload_paths = {u.image_path for u in UploadRecord.query.all() if u.image_path}
+    all_image_paths = pred_paths | upload_paths
+
     deleted_count = Prediction.query.delete()
     UploadRecord.query.delete()
     db.session.commit()
 
-    for img_path in image_paths:
+    for img_path in all_image_paths:
         delete_uploaded_file(upload_folder, img_path)
 
     return jsonify({"message": "All prediction history records cleared.", "deletedCount": deleted_count}), 200

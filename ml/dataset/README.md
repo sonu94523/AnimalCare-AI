@@ -24,7 +24,7 @@ ml/dataset/
 ```
 
 ## Usage Commands (run from project root)
-Train on **your own real labelled dataset** (place images in `ml/dataset/raw/<class_name>/` first):
+Train on **your own real labelled dataset** (place images in `ml/dataset/raw/<class_name>/` first; note that `--organize` splits per image, so for multi-photo real datasets you should group photos by individual animal/herd across `train/`, `val/`, and `test/` manually to avoid same-animal leakage):
 ```bash
 python -m ml.preprocessing --organize --verify
 python -m ml.train --epochs 10

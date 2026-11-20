@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useSearchParams, useNavigate, useLocation } from 'react-router-dom'
 import { OFFLINE_FALLBACK_ANIMALS, OFFLINE_FALLBACK_SYMPTOMS } from '../data/fallbackData'
-import { fetchSymptoms, submitSymptomForm, submitCombinedPrediction } from '../services/api'
+import { fetchAnimals, fetchSymptoms, submitSymptomForm, submitCombinedPrediction } from '../services/api'
 
 export const SYMPTOM_LIST = OFFLINE_FALLBACK_SYMPTOMS
 
@@ -10,10 +10,7 @@ function SymptomChecker() {
   const navigate = useNavigate()
   const location = useLocation()
   const attachedImageState = location.state || {}
-  const paramAnimal = searchParams.get('animal') || 'cow'
-  const animalId = OFFLINE_FALLBACK_ANIMALS.some((a) => a.id === paramAnimal)
-    ? paramAnimal
-    : OFFLINE_FALLBACK_ANIMALS[0].id
+  const [animals, setAnimals] = useState(OFFLINE_FALLBACK_ANIMALS)
   const [allSymptoms, setAllSymptoms] = useState(OFFLINE_FALLBACK_SYMPTOMS)
   const [rawSelectedIds, setSelectedSymptomIds] = useState([])
   const [submitting, setSubmitting] = useState(false)
@@ -21,6 +18,15 @@ function SymptomChecker() {
 
   useEffect(() => {
     let mounted = true
+    fetchAnimals()
+      .then((data) => {
+        if (mounted && Array.isArray(data) && data.length > 0) {
+          setAnimals(data)
+        }
+      })
+      .catch(() => {
+        // Fallback to OFFLINE_FALLBACK_ANIMALS
+      })
     fetchSymptoms()
       .then((data) => {
         if (mounted && Array.isArray(data) && data.length > 0) {
@@ -35,7 +41,9 @@ function SymptomChecker() {
     }
   }, [])
 
-  const currentAnimal = OFFLINE_FALLBACK_ANIMALS.find((a) => a.id === animalId) || OFFLINE_FALLBACK_ANIMALS[0]
+  const paramAnimal = searchParams.get('animal') || 'cow'
+  const animalId = animals.some((a) => a.id === paramAnimal) ? paramAnimal : animals[0].id
+  const currentAnimal = animals.find((a) => a.id === animalId) || animals[0]
 
   const availableSymptoms = allSymptoms.filter(
     (s) => !Array.isArray(s.animals) || s.animals.includes(currentAnimal.id)
@@ -174,7 +182,7 @@ function SymptomChecker() {
               setErrorMsg('')
             }}
           >
-            {OFFLINE_FALLBACK_ANIMALS.map((a) => (
+            {animals.map((a) => (
               <option key={a.id} value={a.id}>
                 {a.emoji} {a.name} ({a.aiSupported ? 'Demo Image + Symptom Check' : 'Symptom Reference Only'})
               </option>

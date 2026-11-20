@@ -14,6 +14,7 @@ MobileNetV2 image inference service (fail-closed).
 import json
 import logging
 import os
+import pickle
 import threading
 from typing import Any, Dict, Optional, Tuple, Union
 
@@ -76,7 +77,12 @@ def clear_model_cache() -> None:
 
 
 def is_model_available(models_dir: str = DEFAULT_SAVED_MODELS_DIR) -> bool:
-    return os.path.isfile(weights_path_for(models_dir))
+    """Verify the checkpoint actually loads cleanly, not just that a file exists."""
+    try:
+        get_trained_model(models_dir=models_dir)
+        return True
+    except ModelUnavailableError:
+        return False
 
 
 def get_trained_model(models_dir: str = DEFAULT_SAVED_MODELS_DIR) -> MobileNetV2DiseaseModel:
@@ -95,7 +101,7 @@ def get_trained_model(models_dir: str = DEFAULT_SAVED_MODELS_DIR) -> MobileNetV2
             return cached[1]
         try:
             model = MobileNetV2DiseaseModel.from_checkpoint(ckpt_path)
-        except (OSError, ValueError, RuntimeError, KeyError) as exc:
+        except (OSError, ValueError, RuntimeError, KeyError, pickle.UnpicklingError, EOFError) as exc:
             logger.error("Failed to load model checkpoint %s: %s", ckpt_path, exc)
             raise ModelUnavailableError(
                 f"Model checkpoint at {os.path.basename(ckpt_path)} could not be loaded. "

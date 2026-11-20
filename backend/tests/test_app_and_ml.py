@@ -8,15 +8,20 @@ uploads, datasets, and model checkpoints so running tests never modifies
 
 import io
 import os
+import re
 import numpy as np
 import pytest
+import torch
 from PIL import Image
 
 from backend.app import create_app
+from backend.domain_data import INITIAL_ANIMALS, INITIAL_DISEASES, SYMPTOM_CATALOG
 from backend.services.decision_service import evaluate_combined_decision
 from backend.services.prediction_service import clear_model_cache
 from backend.services.symptom_service import analyze_symptoms, resolve_symptom_ids
+from ml.constants import WEIGHTS_FILENAME
 from ml.evaluate import compute_classification_metrics, compute_confusion_matrix, evaluate_saved_model
+from ml.model import MobileNetV2DiseaseModel
 from ml.preprocessing import CLASS_NAMES, IMAGE_SHAPE, preprocess_image, seed_sample_dataset
 from ml.train import train_and_save_model
 
@@ -443,3 +448,141 @@ def test_history_admin_auth_and_file_cleanup_on_delete(trained_env):
     clear_resp = client.delete("/api/history", headers=headers)
     assert clear_resp.status_code == 200
     assert client.get("/api/history").get_json()["totalCount"] == 0
+
+
+def test_clear_history_removes_orphaned_uploads_and_combined_validates_symptoms_first(trained_env):
+    """Regression test for Issue 2: no orphaned files on disk after clear-all or invalid combined submit."""
+    client = trained_env["client"]
+    headers = trained_env["admin_headers"]
+    upload_dir = trained_env["upload_dir"]
+
+    # 1. Upload via /api/upload without completing a screening (only UploadRecord exists, no Prediction row)
+    up_resp = client.post(
+        "/api/upload",
+        data={"animal": "cow", "image": (io.BytesIO(_make_textured_jpeg()), "unfinished.jpg")},
+        content_type="multipart/form-data",
+    )
+    assert up_resp.status_code == 201
+    orphan_file = upload_dir / up_resp.get_json()["upload"]["filename"]
+    assert orphan_file.is_file()
+
+    # Clear all history must also delete unfinished UploadRecord files
+    clear_resp = client.delete("/api/history", headers=headers)
+    assert clear_resp.status_code == 200
+    assert not orphan_file.exists()
+    assert list(upload_dir.iterdir()) == []
+
+    # 2. Combined submit with a photo + invalid symptom list must reject BEFORE saving the file
+    bad_comb = client.post(
+        "/api/predict/combined",
+        data={
+            "animal": "cow",
+            "symptoms": '["not_a_real_symptom"]',
+            "image": (io.BytesIO(_make_textured_jpeg()), "cow.jpg"),
+        },
+        content_type="multipart/form-data",
+    )
+    assert bad_comb.status_code == 400
+    assert list(upload_dir.iterdir()) == []
+
+
+def test_per_epoch_on_the_fly_augmentation_preserves_originals():
+    """Regression test for Issue 3: augmentation runs per batch inside fit() without mutating X_train."""
+    batch = torch.rand((4, 3, 64, 64), dtype=torch.float32)
+    snapshot = batch.clone()
+    gen = torch.Generator().manual_seed(99)
+
+    aug_epoch_1 = MobileNetV2DiseaseModel._augment_batch(batch, gen)
+    aug_epoch_2 = MobileNetV2DiseaseModel._augment_batch(batch, gen)
+
+    # Original tensor untouched, and consecutive epochs see different augmented variants
+    assert torch.equal(batch, snapshot)
+    assert not torch.allclose(aug_epoch_1, snapshot)
+    assert not torch.allclose(aug_epoch_1, aug_epoch_2)
+
+
+def test_strict_25m_pixel_cap_and_non_english_filename_and_iso_utc_timestamp(trained_env):
+    """Regression tests for Issues 4, 5 and 6."""
+    client = trained_env["client"]
+
+    # Issue 4: 6000x5000 = 30M pixels (well under 5 MB as flat PNG, > 25M strict cap) must be rejected
+    big_png_buf = io.BytesIO()
+    Image.new("RGB", (6000, 5000), (120, 130, 140)).save(big_png_buf, format="PNG")
+    big_png_bytes = big_png_buf.getvalue()
+    assert len(big_png_bytes) < 5 * 1024 * 1024  # small byte size, huge pixel count
+
+    over_px_resp = client.post(
+        "/api/predict/image",
+        data={"animal": "cow", "image": (io.BytesIO(big_png_bytes), "huge_dims.png")},
+        content_type="multipart/form-data",
+    )
+    assert over_px_resp.status_code == 400
+    assert "pixel" in over_px_resp.get_json()["error"].lower()
+
+    # Issue 5: Non-English filename ('गाय.jpg') must be accepted and saved safely on disk
+    hindi_resp = client.post(
+        "/api/predict/image",
+        data={"animal": "cow", "image": (io.BytesIO(_make_textured_jpeg()), "गाय.jpg")},
+        content_type="multipart/form-data",
+    )
+    assert hindi_resp.status_code == 200
+    hindi_body = hindi_resp.get_json()
+    assert hindi_body["upload"]["originalName"] == "गाय.jpg"
+    assert hindi_body["upload"]["filename"].endswith(".jpg")
+
+    # Issue 6: History record exposes an explicit UTC ISO-8601 timestamp ending in 'Z'
+    record = hindi_body["record"]
+    assert record["createdAt"].endswith("Z")
+    assert re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$", record["createdAt"])
+
+
+def test_unexpected_prediction_error_cleans_up_upload_and_health_checks_corrupt_weights(isolated_env, monkeypatch):
+    """Regression tests for Smaller Items 3 and 4."""
+    client = isolated_env["client"]
+
+    # Smaller Item 4: Corrupt checkpoint file must report modelLoaded=False on /api/health
+    corrupt_ckpt = isolated_env["models_dir"] / WEIGHTS_FILENAME
+    corrupt_ckpt.write_bytes(b"not-a-valid-pytorch-checkpoint")
+    clear_model_cache()
+    health = client.get("/api/health").get_json()
+    assert health["modelLoaded"] is False
+    assert health["database"] == "sqlite"
+
+    # Smaller Item 3: Unexpected inference exception must return 500 and delete the uploaded file
+    def _boom(*_args, **_kwargs):
+        raise RuntimeError("simulated inference crash")
+
+    monkeypatch.setattr("backend.routes.api_routes.predict_disease_from_image", _boom)
+    crash_resp = client.post(
+        "/api/predict/image",
+        data={"animal": "cow", "image": (io.BytesIO(_make_textured_jpeg()), "cow.jpg")},
+        content_type="multipart/form-data",
+    )
+    assert crash_resp.status_code == 500
+    assert list(isolated_env["upload_dir"].iterdir()) == []
+
+
+def test_frontend_fallback_data_matches_backend_domain_data():
+    """Regression test for Smaller Item 2: keep fallbackData.js IDs in sync with backend/domain_data.py."""
+    repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    fallback_path = os.path.join(repo_root, "frontend", "src", "data", "fallbackData.js")
+    with open(fallback_path, "r", encoding="utf-8") as f:
+        text = f.read()
+
+    animals_block = text.split("export const OFFLINE_FALLBACK_ANIMALS")[1].split("export const OFFLINE_FALLBACK_SYMPTOMS")[0]
+    symptoms_block = text.split("export const OFFLINE_FALLBACK_SYMPTOMS")[1].split("export const OFFLINE_FALLBACK_DISEASES")[0]
+    diseases_block = text.split("export const OFFLINE_FALLBACK_DISEASES")[1]
+
+    fe_animal_ids = re.findall(r"id:\s*'([^']+)'", animals_block)
+    fe_symptom_ids = re.findall(r"id:\s*'([^']+)'", symptoms_block)
+    fe_disease_ids = re.findall(r"id:\s*'([^']+)'", diseases_block)
+
+    assert fe_animal_ids == [a["slug"] for a in INITIAL_ANIMALS]
+    assert fe_symptom_ids == [s["id"] for s in SYMPTOM_CATALOG]
+    assert fe_disease_ids == [d["slug"] for d in INITIAL_DISEASES]
+
+    # Regression test for Issue 1: admin token must never be embedded via VITE_ADMIN_TOKEN
+    for rel in ("frontend/src/services/api.js", "frontend/src/pages/History.jsx"):
+        with open(os.path.join(repo_root, rel), "r", encoding="utf-8") as f:
+            assert "VITE_ADMIN_TOKEN" not in f.read()
+

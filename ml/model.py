@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Optional, Sequence
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torchvision import models as tv_models
 
 from ml.constants import ARCHITECTURE_FILENAME, DEFAULT_SAVED_MODELS_DIR, WEIGHTS_FILENAME
@@ -135,6 +136,37 @@ class MobileNetV2DiseaseModel:
             return torch.softmax(self.model(x), dim=1).cpu().numpy().astype(np.float32)
 
     # --------------------------------------------------------------- training
+    @staticmethod
+    def _augment_batch(bx: torch.Tensor, gen: torch.Generator) -> torch.Tensor:
+        """Apply per-epoch on-the-fly augmentation to an (N, 3, H, W) tensor batch.
+
+        Runs inside `fit()` so every epoch sees fresh random variants while the
+        original `X_train` array remains intact.
+        """
+        out = bx.clone()
+        n, _, h, w = out.shape
+        for i in range(n):
+            sample = out[i]
+            # 1. Random horizontal flip (50% chance)
+            if float(torch.rand(1, generator=gen).item()) < 0.5:
+                sample = torch.flip(sample, dims=[2])
+
+            # 2. Random zoom crop (90% to 100%) resized back to (h, w)
+            scale = 0.90 + 0.10 * float(torch.rand(1, generator=gen).item())
+            if scale < 0.99:
+                ch, cw = max(1, int(h * scale)), max(1, int(w * scale))
+                top = int(torch.randint(0, h - ch + 1, (1,), generator=gen).item())
+                left = int(torch.randint(0, w - cw + 1, (1,), generator=gen).item())
+                cropped = sample[:, top:top + ch, left:left + cw].unsqueeze(0)
+                sample = F.interpolate(cropped, size=(h, w), mode="bilinear", align_corners=False).squeeze(0)
+
+            # 3. Mild multiplicative contrast & additive brightness jitter
+            contrast = 0.88 + 0.24 * float(torch.rand(1, generator=gen).item())
+            brightness = -0.12 + 0.24 * float(torch.rand(1, generator=gen).item())
+            sample = sample * contrast + brightness
+            out[i] = sample
+        return out
+
     def _set_train_mode(self) -> None:
         self.model.train()
         if self.pretrained:
@@ -152,8 +184,9 @@ class MobileNetV2DiseaseModel:
         epochs: int = 8,
         batch_size: int = 8,
         seed: int = 42,
+        augment: bool = False,
     ) -> Dict[str, Any]:
-        """Train with Adam + cross-entropy.
+        """Train with Adam + cross-entropy and optional per-epoch on-the-fly augmentation.
 
         With a validation set, the weights from the epoch with the best validation
         accuracy (ties broken by lower validation loss) are restored at the end.
@@ -163,6 +196,7 @@ class MobileNetV2DiseaseModel:
             raise ValueError("Training array X_train is empty.")
         torch.manual_seed(seed)
         rng = np.random.default_rng(seed)
+        aug_gen = torch.Generator().manual_seed(seed)
 
         optimizer = torch.optim.Adam([p for p in self.model.parameters() if p.requires_grad], lr=self.learning_rate)
         criterion = nn.CrossEntropyLoss()
@@ -186,6 +220,8 @@ class MobileNetV2DiseaseModel:
             for start in range(0, n_train, batch_size):
                 idx = perm[start:start + batch_size]
                 bx, by = x_train[idx], y_train_t[idx]
+                if augment:
+                    bx = self._augment_batch(bx, aug_gen)
                 optimizer.zero_grad()
                 logits = self.model(bx)
                 loss = criterion(logits, by)

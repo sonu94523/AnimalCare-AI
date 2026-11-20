@@ -2,21 +2,52 @@ import React, { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   API_BASE_URL,
+  fetchAnimals,
   fetchHistory,
   deleteHistoryRecord,
   clearAllHistory
 } from '../services/api'
-import { OFFLINE_FALLBACK_ANIMALS as ANIMALS } from '../data/fallbackData'
+import { OFFLINE_FALLBACK_ANIMALS } from '../data/fallbackData'
+
+export function formatLocalTimestamp(isoOrDate) {
+  if (!isoOrDate) return 'N/A'
+  const parsed = new Date(isoOrDate)
+  if (Number.isNaN(parsed.getTime())) return String(isoOrDate)
+  return parsed.toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+}
 
 function History() {
   const navigate = useNavigate()
+  const [animals, setAnimals] = useState(OFFLINE_FALLBACK_ANIMALS)
   const [records, setRecords] = useState([])
   const [animalFilter, setAnimalFilter] = useState('all')
   const [refreshTick, setRefreshTick] = useState(0)
-  const [adminToken, setAdminToken] = useState(import.meta.env.VITE_ADMIN_TOKEN || '')
+  const [adminToken, setAdminToken] = useState('')
   const [loading, setLoading] = useState(true)
   const [statusMsg, setStatusMsg] = useState('')
   const [errorMsg, setErrorMsg] = useState('')
+
+  useEffect(() => {
+    let active = true
+    fetchAnimals()
+      .then((data) => {
+        if (active && Array.isArray(data) && data.length > 0) {
+          setAnimals(data)
+        }
+      })
+      .catch(() => {
+        // Fallback to OFFLINE_FALLBACK_ANIMALS
+      })
+    return () => {
+      active = false
+    }
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -168,7 +199,7 @@ function History() {
               }}
             >
               <option value="all">All Animals</option>
-              {ANIMALS.map((a) => (
+              {animals.map((a) => (
                 <option key={a.id} value={a.id}>
                   {a.emoji} {a.name}
                 </option>
@@ -232,7 +263,7 @@ function History() {
               <tbody>
                 {records.map((rec) => (
                   <tr key={rec.id}>
-                    <td>{rec.date}</td>
+                    <td>{formatLocalTimestamp(rec.createdAt || rec.date)}</td>
                     <td>
                       <strong>{rec.animal}</strong>
                     </td>

@@ -36,8 +36,9 @@ def train_and_save_model(
     augment: bool = True,
     seed: int = 42,
 ) -> Dict[str, Any]:
-    """Train on ml/dataset/train, select on ml/dataset/val, and save artefacts."""
-    X_train, y_train, _ = load_split_arrays("train", dataset_root=dataset_root, augment=augment, seed=seed)
+    """Train on ml/dataset/train with per-epoch augmentation, select on val, and save artefacts."""
+    # Always load original un-augmented images; augmentation runs fresh per batch inside fit().
+    X_train, y_train, _ = load_split_arrays("train", dataset_root=dataset_root, augment=False, seed=seed)
     if X_train.shape[0] == 0:
         raise FileNotFoundError(
             f"No training images found in {os.path.join(dataset_root, 'train')}. Add real labelled images to "
@@ -62,7 +63,7 @@ def train_and_save_model(
     if unfreeze_top > 0:
         model.unfreeze_top_layers(unfreeze_top)
 
-    report = model.fit(X_train, y_train, X_val, y_val, epochs=epochs, batch_size=batch_size, seed=seed)
+    report = model.fit(X_train, y_train, X_val, y_val, epochs=epochs, batch_size=batch_size, seed=seed, augment=augment)
 
     weights_path = model.save_checkpoint(saved_models_dir)
     arch_path = model.save_architecture_metadata(saved_models_dir)

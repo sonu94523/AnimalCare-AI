@@ -100,6 +100,10 @@ class Prediction(db.Model):
 
     def to_dict(self):
         details = json.loads(self.details_json) if self.details_json else None
+        dt = self.created_at
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        iso_utc = dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         return {
             "id": self.id,
             "animal": self.animal,
@@ -110,5 +114,6 @@ class Prediction(db.Model):
             "confidence": self.confidence,
             "symptomAnalysis": self.symptom_analysis or "N/A",
             "details": details,
-            "date": self.created_at.strftime("%Y-%m-%d %H:%M"),
+            "createdAt": iso_utc,
+            "date": iso_utc,
         }

@@ -2,6 +2,7 @@ import io
 import logging
 import os
 import uuid
+import warnings
 from typing import Dict, Optional, Tuple
 from PIL import Image, UnidentifiedImageError
 from werkzeug.utils import secure_filename
@@ -10,8 +11,11 @@ from ml.preprocessing import IMAGE_SIZE, preprocess_image
 
 logger = logging.getLogger(__name__)
 
-# Guard against decompression bombs before decoding any uploaded file.
-Image.MAX_IMAGE_PIXELS = 25_000_000
+# Enforce a strict 25M pixel limit: treat Pillow's DecompressionBombWarning as an error
+# AND explicitly check width * height before decoding pixels.
+MAX_IMAGE_PIXELS = 25_000_000
+Image.MAX_IMAGE_PIXELS = MAX_IMAGE_PIXELS
+warnings.simplefilter("error", Image.DecompressionBombWarning)
 
 ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png"}
 ALLOWED_PIL_FORMATS = {"JPEG", "PNG"}
@@ -19,19 +23,23 @@ MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024  # 5 MB
 
 
 def is_allowed_filename(filename: str) -> bool:
-    if not filename or "." not in filename:
+    """Validate extension on the raw basename so non-ASCII names (e.g. 'गाय.jpg') work."""
+    if not filename:
         return False
-    ext = filename.rsplit(".", 1)[1].lower()
+    base = os.path.basename(filename).strip()
+    if "." not in base:
+        return False
+    ext = base.rsplit(".", 1)[1].lower()
     return ext in ALLOWED_EXTENSIONS
 
 
 def validate_and_save_image(file_storage, upload_folder: str) -> Tuple[Optional[Dict], Optional[str]]:
-    """Validate an uploaded image, strip metadata by re-encoding via PIL, and save it."""
+    """Validate upload (format, 5 MB cap, strict 25M pixel cap), strip EXIF via PIL, and save."""
     if file_storage is None or not file_storage.filename:
         return None, "No image file provided."
 
-    original_name = secure_filename(file_storage.filename)
-    if not is_allowed_filename(original_name):
+    raw_name = os.path.basename(file_storage.filename).strip()
+    if not is_allowed_filename(raw_name):
         return None, "Invalid image format. Only JPG, JPEG, and PNG files are allowed."
 
     file_bytes = file_storage.read()
@@ -45,10 +53,23 @@ def validate_and_save_image(file_storage, upload_folder: str) -> Tuple[Optional[
     try:
         with Image.open(io.BytesIO(file_bytes)) as img:
             img_format = (img.format or "").upper()
+            width, height = img.size
+            if width * height > MAX_IMAGE_PIXELS:
+                return None, (
+                    f"Image dimensions ({width}x{height} = {width * height:,} pixels) "
+                    f"exceed the {MAX_IMAGE_PIXELS:,} pixel maximum limit."
+                )
             img.verify()
-    except (UnidentifiedImageError, Image.DecompressionBombError, OSError, SyntaxError, ValueError) as exc:
-        logger.warning("Rejected invalid image upload '%s': %s", original_name, exc)
-        return None, "Uploaded file is corrupted, oversized in pixel dimensions, or not a valid image."
+    except (
+        UnidentifiedImageError,
+        Image.DecompressionBombError,
+        Image.DecompressionBombWarning,
+        OSError,
+        SyntaxError,
+        ValueError,
+    ) as exc:
+        logger.warning("Rejected invalid image upload '%s': %s", raw_name, exc)
+        return None, "Uploaded file is corrupted, exceeds the 25,000,000 pixel limit, or is not a valid image."
 
     if img_format not in ALLOWED_PIL_FORMATS:
         return None, "Unsupported image encoding. Please upload a valid JPEG or PNG image."
@@ -67,12 +88,13 @@ def validate_and_save_image(file_storage, upload_folder: str) -> Tuple[Optional[
                 out_ext = "jpg"
             clean_bytes = out_buf.getvalue()
     except (UnidentifiedImageError, Image.DecompressionBombError, OSError, ValueError) as exc:
-        logger.warning("Failed to re-encode image '%s': %s", original_name, exc)
+        logger.warning("Failed to re-encode image '%s': %s", raw_name, exc)
         return None, "Could not decode uploaded image pixels."
 
     os.makedirs(upload_folder, exist_ok=True)
-    stem = os.path.splitext(original_name)[0][:60] or "image"
-    unique_filename = f"{uuid.uuid4().hex[:12]}_{stem}.{out_ext}"
+    raw_stem = os.path.splitext(raw_name)[0]
+    safe_stem = secure_filename(raw_stem)[:60] or "image"
+    unique_filename = f"{uuid.uuid4().hex[:12]}_{safe_stem}.{out_ext}"
     saved_path = os.path.join(upload_folder, unique_filename)
 
     with open(saved_path, "wb") as f:
@@ -87,7 +109,7 @@ def validate_and_save_image(file_storage, upload_folder: str) -> Tuple[Optional[
 
     return {
         "filename": unique_filename,
-        "originalName": original_name,
+        "originalName": raw_name,
         "imagePath": f"/uploads/{unique_filename}",
         "width": width,
         "height": height,

@@ -1,7 +1,6 @@
 import axios from 'axios'
 
 export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000'
-const DEFAULT_ADMIN_TOKEN = import.meta.env.VITE_ADMIN_TOKEN || ''
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -12,7 +11,7 @@ export const apiClient = axios.create({
 })
 
 function adminHeaders(tokenOverride) {
-  const token = (tokenOverride ?? DEFAULT_ADMIN_TOKEN).trim()
+  const token = String(tokenOverride || '').trim()
   return token ? { 'X-Admin-Token': token } : {}
 }
 

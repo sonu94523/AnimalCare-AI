@@ -6,6 +6,7 @@ import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import Results from '../pages/Results'
 import DiseaseInfo from '../pages/DiseaseInfo'
 import SymptomChecker from '../pages/SymptomChecker'
+import History, { formatLocalTimestamp } from '../pages/History'
 import NotFound from '../pages/NotFound'
 import * as api from '../services/api'
 
@@ -15,6 +16,21 @@ vi.mock('../services/api', () => ({
   fetchAnimals: vi.fn().mockResolvedValue([]),
   fetchSymptoms: vi.fn().mockResolvedValue([]),
   fetchDiseases: vi.fn().mockResolvedValue([]),
+  fetchHistory: vi.fn().mockResolvedValue([
+    {
+      id: 42,
+      animal: 'Cow',
+      animalId: 'cow',
+      imagePrediction: 'No image uploaded (Symptom-only check)',
+      confidence: 80,
+      symptomAnalysis: 'Lumpy Skin Disease (LSD)',
+      symptoms: ['Fever (High body temperature)'],
+      createdAt: '2026-11-20T17:30:00Z',
+      date: '2026-11-20T17:30:00Z'
+    }
+  ]),
+  deleteHistoryRecord: vi.fn().mockResolvedValue({ deletedId: 42 }),
+  clearAllHistory: vi.fn().mockResolvedValue({ deletedCount: 1 }),
   fetchModelInfo: vi.fn().mockResolvedValue({
     backbone: 'MobileNetV2',
     inputShape: [224, 224, 3],
@@ -134,5 +150,56 @@ describe('AnimalCare AI Frontend Flows', () => {
       </MemoryRouter>
     )
     expect(screen.getByText(/404 – Page Not Found/i)).toBeInTheDocument()
+  })
+
+  it('shows combined conflict explanation ahead of image uncertaintyNotice on Results', () => {
+    const conflictState = {
+      animal: 'Cow',
+      animalId: 'cow',
+      imageName: 'cow.jpg',
+      imagePath: '/uploads/cow.jpg',
+      previewUrl: 'http://localhost:5000/uploads/cow.jpg',
+      imagePrediction: 'Uncertain / Low Confidence (Healthy)',
+      confidence: 52.0,
+      isLowConfidence: true,
+      uncertaintyNotice: 'Model confidence is low. Please use the Symptom Checker.',
+      modelValidated: false,
+      symptoms: ['Blisters / vesicles on tongue, gums, muzzle, or hooves'],
+      combinedDecision: {
+        mode: 'combined',
+        finalConclusion: 'Conflicting Findings (Healthy vs. Foot-and-Mouth Disease (FMD))',
+        agreementStatus: 'Conflict / Disagreement Detected',
+        combinedConfidence: 52.0,
+        hasConflict: true,
+        isUncertain: true,
+        modelValidated: false,
+        explanation: 'Disagreement detected: image output indicates Healthy whereas symptoms match FMD.'
+      }
+    }
+
+    render(
+      <MemoryRouter initialEntries={[{ pathname: '/results', state: conflictState }]}>
+        <Routes>
+          <Route path="/results" element={<Results />} />
+        </Routes>
+      </MemoryRouter>
+    )
+
+    expect(screen.getByText(/Disagreement detected: image output indicates Healthy/i)).toBeInTheDocument()
+    expect(screen.queryByText(/Please use the Symptom Checker/i)).not.toBeInTheDocument()
+  })
+
+  it('formats ISO UTC history timestamps into local time instead of displaying raw Z strings', async () => {
+    render(
+      <MemoryRouter>
+        <History />
+      </MemoryRouter>
+    )
+
+    const expectedFormatted = formatLocalTimestamp('2026-11-20T17:30:00Z')
+    await waitFor(() => {
+      expect(screen.getByText(expectedFormatted)).toBeInTheDocument()
+    })
+    expect(screen.queryByText('2026-11-20T17:30:00Z')).not.toBeInTheDocument()
   })
 })

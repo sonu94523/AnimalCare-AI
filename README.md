@@ -13,8 +13,8 @@ A college-level web application for preliminary animal disease screening combini
   - **Symptom Reference Only (AI Image Detection Unavailable):** **Goat**, **Sheep**, **Dog**, **Cat** (blocked server-side for image inference)
 - **PyTorch MobileNetV2 Transfer Learning Pipeline (`ml/`):**
   - Preprocesses uploaded JPG/JPEG/PNG photos (`max 5 MB`, `MAX_IMAGE_PIXELS = 25M`) by re-encoding through PIL to strip EXIF/GPS metadata, resizing to `224 × 224` RGB, and applying ImageNet mean/std normalization.
-  - Defaults to `pretrained=True` (`MobileNet_V2_Weights.IMAGENET1K_V1`) with `AdaptiveAvgPool2d -> Linear(1280, 128) -> ReLU -> Dropout(0.3) -> Linear(128, 3)`.
-  - Rejects blank/solid/low-detail frames (e.g. solid black or solid white) before classification as **Out-of-Distribution / Unsuitable Image**, and flags predictions under `60%` confidence as uncertain.
+  - Defaults to `pretrained=True` (`MobileNet_V2_Weights.IMAGENET1K_V1`) with `AdaptiveAvgPool2d -> Linear(1280, 128) -> ReLU -> Dropout(0.3) -> Linear(128, 3)` and per-epoch on-the-fly batch augmentation during training.
+  - Rejects blank/solid/low-detail frames (`pixel std < 5.0`, e.g. solid black or solid white) before classification as **Out-of-Distribution / Unsuitable Image**, and flags predictions under `60%` confidence as uncertain. *(Note: this guard checks visual detail only, not animal species—any textured non-animal photo will still be scored by the demo model.)*
 - **Weighted Rule-Based Symptom Checker (`backend/services/symptom_service.py`):**
   - Evaluates hallmark vs. supporting clinical signs across all 6 animal categories.
   - Prevents single non-specific signs (such as fever alone) from claiming a specific disease.
