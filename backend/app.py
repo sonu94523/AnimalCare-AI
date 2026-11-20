@@ -65,11 +65,14 @@ def create_app(config: Optional[Dict[str, Any]] = None) -> Flask:
 
     with app.app_context():
         db.create_all()
-        # Safe lightweight migration for existing SQLite databases created before details_json
-        existing_cols = {col["name"] for col in inspect(db.engine).get_columns("predictions")}
-        if "details_json" not in existing_cols:
+        # Safe lightweight migrations for existing local SQLite databases
+        pred_cols = {col["name"] for col in inspect(db.engine).get_columns("predictions")}
+        if "details_json" not in pred_cols:
             db.session.execute(text("ALTER TABLE predictions ADD COLUMN details_json TEXT"))
-            db.session.commit()
+        animal_cols = {col["name"] for col in inspect(db.engine).get_columns("animals")}
+        if "category" not in animal_cols:
+            db.session.execute(text("ALTER TABLE animals ADD COLUMN category VARCHAR(32) DEFAULT 'livestock' NOT NULL"))
+        db.session.commit()
         seed_initial_data()
 
     @app.errorhandler(413)

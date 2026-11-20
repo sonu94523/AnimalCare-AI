@@ -19,6 +19,7 @@ from backend.models.db_models import Animal, Disease, Prediction, UploadRecord
 from backend.services.decision_service import evaluate_combined_decision
 from backend.services.prediction_service import (
     ModelUnavailableError,
+    inspect_photo_for_symptom_guided_animal,
     is_model_available,
     predict_disease_from_image,
 )
@@ -36,14 +37,24 @@ api_bp = Blueprint("api", __name__, url_prefix="/api")
 
 
 def seed_initial_data() -> None:
-    """Populate Animals and Diseases from `backend.domain_data` if empty."""
-    if Animal.query.count() == 0:
-        for item in INITIAL_ANIMALS:
+    """Sync Animals and Diseases from `backend.domain_data` into SQLite (insert missing, update metadata)."""
+    existing_animals = {a.slug: a for a in Animal.query.all()}
+    for item in INITIAL_ANIMALS:
+        row = existing_animals.get(item["slug"])
+        if row is None:
             db.session.add(Animal(**item))
-        db.session.commit()
+        else:
+            row.name = item["name"]
+            row.emoji = item["emoji"]
+            row.category = item["category"]
+            row.ai_supported = item["ai_supported"]
+            row.badge = item["badge"]
+            row.details = item["details"]
 
-    if Disease.query.count() == 0:
-        for item in INITIAL_DISEASES:
+    existing_diseases = {d.slug: d for d in Disease.query.all()}
+    for item in INITIAL_DISEASES:
+        row = existing_diseases.get(item["slug"])
+        if row is None:
             db.session.add(
                 Disease(
                     slug=item["slug"],
@@ -55,7 +66,14 @@ def seed_initial_data() -> None:
                     prevention_json=json.dumps(item["prevention"]),
                 )
             )
-        db.session.commit()
+        else:
+            row.name = item["name"]
+            row.affected_animals = item["affected_animals"]
+            row.ai_supported = item["ai_supported"]
+            row.symptoms_json = json.dumps(item["symptoms"])
+            row.causes = item["causes"]
+            row.prevention_json = json.dumps(item["prevention"])
+    db.session.commit()
 
 
 def _parse_json_object() -> Tuple[Optional[Dict[str, Any]], Optional[Tuple[Any, int]]]:
@@ -99,10 +117,10 @@ def _parse_save_history_flag(data: Dict[str, Any]) -> bool:
 
 
 def _run_image_upload_and_predict(animal_id: str) -> Tuple[Optional[Dict[str, Any]], Optional[Tuple[Any, int]]]:
-    """Validate upload, run MobileNetV2 inference, and store a server-side UploadRecord."""
-    if animal_id not in AI_SUPPORTED_ANIMALS:
+    """Validate upload, run MobileNetV2 (Cow/Buffalo) or honest photo inspection (other animals), and save UploadRecord."""
+    if animal_id not in ALL_ANIMALS:
         return None, (jsonify({
-            "error": f"AI image detection is currently unavailable for '{animal_id}'. Only Cow and Buffalo are supported."
+            "error": f"Unknown animal category '{animal_id}'. Please select one of the supported animals."
         }), 400)
 
     upload_folder = current_app.config["UPLOAD_FOLDER"]
@@ -113,12 +131,18 @@ def _run_image_upload_and_predict(animal_id: str) -> Tuple[Optional[Dict[str, An
 
     saved_file_path = os.path.join(upload_folder, upload_info["filename"])
     try:
-        prediction = predict_disease_from_image(
-            saved_file_path,
-            animal_id=animal_id,
-            models_dir=current_app.config["MODELS_DIR"],
-            dataset_dir=current_app.config["DATASET_DIR"],
-        )
+        if animal_id in AI_SUPPORTED_ANIMALS:
+            prediction = predict_disease_from_image(
+                saved_file_path,
+                animal_id=animal_id,
+                models_dir=current_app.config["MODELS_DIR"],
+                dataset_dir=current_app.config["DATASET_DIR"],
+            )
+        else:
+            prediction = inspect_photo_for_symptom_guided_animal(
+                saved_file_path,
+                animal_id=animal_id,
+            )
     except ModelUnavailableError as exc:
         delete_uploaded_file(upload_folder, upload_info["imagePath"])
         logger.warning("Image prediction unavailable (503): %s", exc)
@@ -199,11 +223,7 @@ def submit_symptoms():
 
     saved_record = None
     if _parse_save_history_flag(data):
-        image_pred_text = (
-            "No image uploaded (Symptom-only check)"
-            if animal_id in AI_SUPPORTED_ANIMALS
-            else f"AI Image Detection unavailable for {analysis['animal']}"
-        )
+        image_pred_text = "No image uploaded (Symptom-only check)"
         details_payload = {
             "imageResult": None,
             "symptomResult": analysis,
@@ -428,11 +448,7 @@ def predict_combined_endpoint():
         img_pred_str = (
             (image_result.get("imagePrediction") or image_result.get("predictedLabel") or "N/A")
             if image_result
-            else (
-                "No image uploaded (Symptom-only check)"
-                if animal_id in AI_SUPPORTED_ANIMALS
-                else f"AI Image Detection unavailable for {animal_id.capitalize()}"
-            )
+            else "No image uploaded (Symptom-only check)"
         )
         sym_summary_str = (
             f"{symptom_result['topCondition']} ({symptom_result['matchScorePercent']}%) — {combined_decision['agreementStatus']}"

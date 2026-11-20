@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
-import { useSearchParams, useNavigate, Link } from 'react-router-dom'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import { OFFLINE_FALLBACK_ANIMALS } from '../data/fallbackData'
-import { fetchAnimals, uploadAnimalImage, predictAnimalImage } from '../services/api'
+import { API_BASE_URL, fetchAnimals, uploadAnimalImage, predictAnimalImage } from '../services/api'
 
 const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/jpg', 'image/png']
 const ALLOWED_EXTENSIONS = ['jpg', 'jpeg', 'png']
@@ -100,7 +100,6 @@ function ImageDetection() {
     canvas.height = 224
     const ctx = canvas.getContext('2d')
 
-    // Synthetic coloured-noise placeholder patterns used only to test the pipeline.
     if (sampleType === 'healthy') {
       ctx.fillStyle = 'rgb(90, 155, 85)'
       ctx.fillRect(0, 0, 224, 224)
@@ -157,12 +156,8 @@ function ImageDetection() {
 
   const handleProceedToResults = async (e) => {
     e.preventDefault()
-    if (!currentAnimal.aiSupported) {
-      setErrorMsg(`AI image detection is not available for ${currentAnimal.name}.`)
-      return
-    }
     if (!selectedFile) {
-      setErrorMsg('Please select an animal image before running detection.')
+      setErrorMsg('Please select an animal photograph before running screening.')
       return
     }
 
@@ -177,14 +172,16 @@ function ImageDetection() {
         state: {
           animal: currentAnimal.name,
           animalId: currentAnimal.id,
+          uploadId: data.uploadId || uploadData.uploadId,
           imageName: uploadData.originalName || selectedFile.name,
           imagePath: uploadData.imagePath,
-          previewUrl: `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}${uploadData.imagePath}`,
+          previewUrl: `${API_BASE_URL}${uploadData.imagePath}`,
           imagePrediction: pred.imagePrediction,
           predictedClass: pred.predictedClass,
           confidence: pred.confidence,
           isLowConfidence: pred.isLowConfidence,
           isOutOfDistribution: pred.isOutOfDistribution,
+          hasDiseaseClassifier: pred.hasDiseaseClassifier,
           uncertaintyNotice: pred.uncertaintyNotice,
           classProbabilities: pred.classProbabilities,
           modelValidated: pred.modelValidated,
@@ -200,7 +197,7 @@ function ImageDetection() {
       const serverError = err?.response?.data?.error
       setErrorMsg(
         serverError ||
-          'Could not run MobileNetV2 image prediction. Ensure the Flask backend is running on port 5000 and model weights are trained.'
+          'Could not process image upload. Ensure the Flask backend is running on port 5000.'
       )
     } finally {
       setUploading(false)
@@ -223,7 +220,7 @@ function ImageDetection() {
           uploadId: data.uploadId || uploadData.uploadId,
           predictionResult: data.prediction,
           imagePath: uploadData.imagePath,
-          previewUrl: `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}${uploadData.imagePath}`,
+          previewUrl: `${API_BASE_URL}${uploadData.imagePath}`,
           imageName: uploadData.originalName || selectedFile.name
         }
       })
@@ -231,7 +228,7 @@ function ImageDetection() {
       const serverError = err?.response?.data?.error
       setErrorMsg(
         serverError ||
-          'Could not upload image for combined screening. Ensure the Flask backend is running and model weights are trained.'
+          'Could not upload image for combined screening. Ensure the Flask backend is running.'
       )
     } finally {
       setUploading(false)
@@ -241,19 +238,25 @@ function ImageDetection() {
   return (
     <div className="page-container">
       <div className="page-header">
-        <h1>Image-Based Screening (Demo Model)</h1>
+        <h1>Photo Screening & Upload</h1>
         <p>
-          Upload a clear photograph (JPG, JPEG, or PNG, max 5 MB). Images are re-encoded to strip metadata and resized to 224 × 224 RGB.
+          Upload a clear photo for any of the 10 supported animals (JPG, JPEG, or PNG, max 5 MB). EXIF/GPS metadata is stripped automatically.
         </p>
       </div>
 
-      <div className="notice-warning" style={{ marginBottom: '1.25rem' }}>
-        <strong>Demo Model — Not Validated on Real Animals:</strong> Unless retrained on real labelled cattle photos, the image classifier is trained only on synthetic placeholder patterns. Image results are for pipeline demonstration only and must not be used for diagnosis. Use the Symptom Checker and consult a veterinarian.
-      </div>
+      {currentAnimal.aiSupported ? (
+        <div className="notice-warning">
+          <strong>Demo Image Model — Not Validated on Real Animals ({currentAnimal.name}):</strong> Unless retrained on real labelled cattle photos, the MobileNetV2 classifier is trained only on synthetic placeholder patterns. Use image results for pipeline demo only and always verify with symptoms and a veterinarian.
+        </div>
+      ) : (
+        <div className="notice-info">
+          <strong>Photo Verification & Attachment Mode ({currentAnimal.emoji} {currentAnimal.name}):</strong> Your photo will be checked for clarity/lighting and attached to your screening report for veterinary review. Because no species-specific image classifier is trained for {currentAnimal.name} yet, combine your photo with the Symptom Checker for condition screening.
+        </div>
+      )}
 
       <div className="form-card">
         <div className="form-group">
-          <label htmlFor="animal-select">Animal Category</label>
+          <label htmlFor="animal-select">1. Animal Category</label>
           <select
             id="animal-select"
             className="form-select"
@@ -266,25 +269,14 @@ function ImageDetection() {
           >
             {animals.map((a) => (
               <option key={a.id} value={a.id}>
-                {a.emoji} {a.name} ({a.aiSupported ? 'Demo Image + Symptoms' : 'AI Unavailable'})
+                {a.emoji} {a.name} ({a.aiSupported ? 'Demo Image + Symptoms' : 'Photo Attach + Symptoms'})
               </option>
             ))}
           </select>
         </div>
 
-        {!currentAnimal.aiSupported ? (
-          <div className="notice-warning">
-            <p>
-              <strong>AI Image Detection Unavailable for {currentAnimal.name}:</strong> Image classification is only configured for <strong>Cow</strong> and <strong>Buffalo</strong>.
-            </p>
-            <div style={{ marginTop: '1rem' }}>
-              <Link to={`/symptoms?animal=${currentAnimal.id}`} className="btn btn-secondary">
-                Use Symptom Checker Instead
-              </Link>
-            </div>
-          </div>
-        ) : (
-          <form onSubmit={handleProceedToResults}>
+        <form onSubmit={handleProceedToResults}>
+          {currentAnimal.aiSupported && (
             <div className="sample-demo-box">
               <p>
                 <strong>Synthetic Placeholder Samples (Pipeline Test Only — Not Real Animal Photos):</strong>
@@ -292,72 +284,93 @@ function ImageDetection() {
               <div className="sample-demo-actions">
                 <button
                   type="button"
-                  className="btn btn-secondary"
-                  style={{ padding: '0.4rem 0.75rem', fontSize: '0.85rem' }}
+                  className="btn btn-secondary btn-small"
                   onClick={() => handleLoadSyntheticDemoImage('healthy')}
                 >
                   Synthetic Healthy Pattern
                 </button>
                 <button
                   type="button"
-                  className="btn btn-secondary"
-                  style={{ padding: '0.4rem 0.75rem', fontSize: '0.85rem' }}
+                  className="btn btn-secondary btn-small"
                   onClick={() => handleLoadSyntheticDemoImage('lsd')}
                 >
                   Synthetic LSD Pattern
                 </button>
                 <button
                   type="button"
-                  className="btn btn-secondary"
-                  style={{ padding: '0.4rem 0.75rem', fontSize: '0.85rem' }}
+                  className="btn btn-secondary btn-small"
                   onClick={() => handleLoadSyntheticDemoImage('fmd')}
                 >
                   Synthetic FMD Pattern
                 </button>
               </div>
             </div>
+          )}
 
-            <div className="form-group">
-              <label htmlFor="image-upload">
-                Upload Animal Photograph (Allowed: JPG, JPEG, PNG | Max size: 5 MB)
-              </label>
+          <div className="form-group">
+            <label htmlFor="image-upload">
+              2. Upload or Capture {currentAnimal.name} Photograph (JPG, JPEG, PNG | Max 5 MB)
+            </label>
+            <div className="upload-dropzone">
+              <p className="result-muted">
+                Choose a clear, well-lit photo from your device or camera
+              </p>
               <input
                 id="image-upload"
                 type="file"
                 accept=".jpg,.jpeg,.png,image/jpeg,image/png"
+                capture="environment"
                 onChange={handleFileChange}
                 className="form-input-file"
               />
             </div>
+          </div>
 
-            {errorMsg && <div className="notice-error">{errorMsg}</div>}
-            {successMsg && <div className="notice-success">{successMsg}</div>}
+          {errorMsg && <div className="notice-error">{errorMsg}</div>}
+          {successMsg && <div className="notice-success">{successMsg}</div>}
 
-            {previewUrl && selectedFile && (
-              <div className="image-preview-box">
-                <p>
-                  <strong>Image Preview:</strong> {selectedFile.name} (
-                  {(selectedFile.size / 1024).toFixed(1)} KB)
-                </p>
-                <img src={previewUrl} alt="Uploaded animal preview" className="preview-img" />
-              </div>
-            )}
-
-            <div className="form-actions">
-              <button type="submit" className="btn btn-primary" disabled={!selectedFile || uploading}>
-                {uploading ? 'Processing...' : '1. Upload & Run Demo Image Screening'}
-              </button>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                disabled={uploading}
-                onClick={handleProceedToCombinedSymptoms}
-              >
-                {uploading ? 'Uploading...' : '2. Combine Image with Symptom Checker'}
-              </button>
+          {previewUrl && selectedFile && (
+            <div className="image-preview-box">
+              <p>
+                <strong>Image Preview:</strong> {selectedFile.name} (
+                {(selectedFile.size / 1024).toFixed(1)} KB)
+              </p>
+              <img src={previewUrl} alt="Uploaded animal preview" className="preview-img" />
             </div>
-          </form>
-        )}
+          )}
+
+          <div className="form-actions">
+            {currentAnimal.aiSupported ? (
+              <>
+                <button type="submit" className="btn btn-primary" disabled={!selectedFile || uploading}>
+                  {uploading ? 'Processing...' : '1. Upload & Run Demo Image Screening'}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={uploading}
+                  onClick={handleProceedToCombinedSymptoms}
+                >
+                  {uploading ? 'Uploading...' : '2. Combine Image with Symptom Checker'}
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={uploading}
+                  onClick={handleProceedToCombinedSymptoms}
+                >
+                  {uploading ? 'Uploading...' : `1. Attach Photo & Check ${currentAnimal.name} Symptoms (Recommended)`}
+                </button>
+                <button type="submit" className="btn btn-secondary" disabled={!selectedFile || uploading}>
+                  {uploading ? 'Processing...' : '2. Upload Photo & View Report Only'}
+                </button>
+              </>
+            )}
+          </div>
+        </form>
       </div>
     </div>
   )

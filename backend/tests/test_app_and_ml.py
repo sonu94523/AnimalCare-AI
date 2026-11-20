@@ -147,13 +147,22 @@ def test_health_animals_diseases_and_model_info(isolated_env):
     assert health["modelValidated"] is False
 
     animals = client.get("/api/animals").get_json()["animals"]
-    assert len(animals) == 6
+    assert len(animals) == 10
     assert {a["id"] for a in animals if a["aiSupported"]} == {"cow", "buffalo"}
-    assert {a["id"] for a in animals if not a["aiSupported"]} == {"goat", "sheep", "dog", "cat"}
+    assert {a["id"] for a in animals if not a["aiSupported"]} == {
+        "goat",
+        "sheep",
+        "horse",
+        "pig",
+        "chicken",
+        "dog",
+        "cat",
+        "rabbit",
+    }
 
     diseases = client.get("/api/diseases").get_json()["diseases"]
-    assert len(diseases) >= 3
-    assert {d["id"] for d in diseases} == {"lumpy_skin_disease", "foot_and_mouth_disease", "healthy"}
+    assert len(diseases) == 11
+    assert {"lumpy_skin_disease", "foot_and_mouth_disease", "healthy"}.issubset({d["id"] for d in diseases})
 
     info = client.get("/api/model/info").get_json()
     assert info["backbone"] == "MobileNetV2"
@@ -267,13 +276,24 @@ def test_upload_hardening_exif_stripped_nosniff_and_rejections(trained_env):
     assert served.headers.get("X-Content-Type-Options") == "nosniff"
     served.close()
 
-    # 2. Unsupported animal -> 400
+    # 2. Unknown animal -> 400; non-cattle supported animal (e.g. goat) -> 200 honest photo attachment (no fake disease probabilities)
     bad_animal = client.post(
+        "/api/predict/image",
+        data={"animal": "dragon", "image": (io.BytesIO(exif_jpeg), "dragon.jpg")},
+        content_type="multipart/form-data",
+    )
+    assert bad_animal.status_code == 400
+
+    goat_photo = client.post(
         "/api/predict/image",
         data={"animal": "goat", "image": (io.BytesIO(exif_jpeg), "goat.jpg")},
         content_type="multipart/form-data",
     )
-    assert bad_animal.status_code == 400
+    assert goat_photo.status_code == 200
+    goat_pred = goat_photo.get_json()["prediction"]
+    assert goat_pred["hasDiseaseClassifier"] is False
+    assert goat_pred["classProbabilities"] == []
+    assert goat_pred["predictedClass"] == "photo_attached_symptom_guided"
 
     # 3. Invalid extension -> 400
     bad_ext = client.post(
@@ -585,4 +605,49 @@ def test_frontend_fallback_data_matches_backend_domain_data():
     for rel in ("frontend/src/services/api.js", "frontend/src/pages/History.jsx"):
         with open(os.path.join(repo_root, rel), "r", encoding="utf-8") as f:
             assert "VITE_ADMIN_TOKEN" not in f.read()
+
+
+def test_all_10_animals_can_run_symptom_and_combined_screening_with_red_flags(trained_env):
+    """Verify every one of the 10 animals produces a valid screening result and red-flag alerts work."""
+    client = trained_env["client"]
+    cases = [
+        ("cow", ["skin_nodules", "fever"], "lumpy_skin_disease", False),
+        ("buffalo", ["mouth_hoof_blisters", "excessive_salivation"], "foot_and_mouth_disease", False),
+        ("goat", ["mouth_ulcers_ppr", "diarrhea", "fever"], "ppr_small_ruminants", False),
+        ("sheep", ["swollen_hot_udder", "reduced_milk"], "bovine_mastitis", False),
+        ("horse", ["abdominal_pain_rolling", "loss_of_appetite"], "equine_colic_laminitis", False),
+        ("pig", ["skin_red_purple_patches", "bloody_diarrhea", "fever"], "swine_fever_signs", True),
+        ("chicken", ["twisted_neck_paralysis", "ruffled_feathers_drooping"], "newcastle_poultry_disease", True),
+        ("dog", ["bloody_diarrhea", "vomiting", "weakness"], "canine_parvovirus_signs", True),
+        ("cat", ["nasal_ocular_discharge", "coughing", "fever"], "feline_upper_respiratory", False),
+        ("rabbit", ["stopped_droppings", "loss_of_appetite"], "rabbit_ear_mites_gi_stasis", False),
+    ]
+
+    for animal_id, symptoms, expected_condition, expect_red_flag in cases:
+        resp = client.post(
+            "/api/symptoms/submit",
+            json={"animal": animal_id, "symptoms": symptoms},
+        )
+        assert resp.status_code == 200, f"Failed for {animal_id}: {resp.get_json()}"
+        body = resp.get_json()
+        assert body["topConditionId"] == expected_condition
+        assert body["hasRedFlag"] is expect_red_flag
+        if expect_red_flag:
+            assert body["urgencyNotice"]
+
+    # Combined photo + symptom check for a non-cattle animal (horse) attaches photo + runs symptom rules
+    up = client.post(
+        "/api/upload",
+        data={"animal": "horse", "image": (io.BytesIO(_make_textured_jpeg()), "horse.jpg")},
+        content_type="multipart/form-data",
+    )
+    assert up.status_code == 201
+    comb = client.post(
+        "/api/predict/combined",
+        json={"animal": "horse", "uploadId": up.get_json()["uploadId"], "symptoms": ["abdominal_pain_rolling"]},
+    )
+    assert comb.status_code == 200
+    comb_data = comb.get_json()
+    assert comb_data["symptomResult"]["topConditionId"] == "equine_colic_laminitis"
+    assert "Photo Attached" in comb_data["combinedDecision"]["agreementStatus"]
 

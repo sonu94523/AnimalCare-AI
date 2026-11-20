@@ -5,10 +5,19 @@ import { fetchAnimals } from '../services/api'
 
 export const ANIMALS = OFFLINE_FALLBACK_ANIMALS
 
+const CATEGORY_TABS = [
+  { id: 'all', label: 'All (10)' },
+  { id: 'livestock', label: 'Livestock' },
+  { id: 'poultry', label: 'Poultry' },
+  { id: 'pet', label: 'Pets' }
+]
+
 function AnimalSelection() {
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
   const [animalsList, setAnimalsList] = useState(OFFLINE_FALLBACK_ANIMALS)
+  const [categoryFilter, setCategoryFilter] = useState('all')
+  const [searchQuery, setSearchQuery] = useState('')
 
   useEffect(() => {
     let mounted = true
@@ -32,17 +41,48 @@ function AnimalSelection() {
 
   const selectedAnimal = animalsList.find((a) => a.id === selectedId) || animalsList[0]
 
+  const filteredAnimals = animalsList.filter((a) => {
+    const matchesCategory = categoryFilter === 'all' || (a.category || 'livestock') === categoryFilter
+    const matchesSearch =
+      !searchQuery.trim() ||
+      a.name.toLowerCase().includes(searchQuery.trim().toLowerCase()) ||
+      (a.details || '').toLowerCase().includes(searchQuery.trim().toLowerCase())
+    return matchesCategory && matchesSearch
+  })
+
   return (
     <div className="page-container">
       <div className="page-header">
         <h1>Step 1: Select Animal Category</h1>
         <p>
-          Choose an animal below to begin preliminary disease screening. Demo image screening is configured for <strong>Cow</strong> and <strong>Buffalo</strong>.
+          Choose any of the 10 supported animals to run photo screening, symptom checking, or combined screening.
         </p>
       </div>
 
+      <div className="filter-bar">
+        <div className="category-tabs">
+          {CATEGORY_TABS.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              className={`category-tab ${categoryFilter === tab.id ? 'active' : ''}`}
+              onClick={() => setCategoryFilter(tab.id)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+        <input
+          type="text"
+          className="search-input"
+          placeholder="Search animal or condition..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+        />
+      </div>
+
       <div className="animal-grid">
-        {animalsList.map((animal) => {
+        {filteredAnimals.map((animal) => {
           const isSelected = animal.id === selectedId
           return (
             <div
@@ -52,17 +92,20 @@ function AnimalSelection() {
                 animal.aiSupported ? 'animal-supported' : 'animal-unsupported'
               } ${isSelected ? 'card-selected' : ''}`}
             >
-              <div className="animal-card-top">
-                <span className="animal-emoji">{animal.emoji}</span>
-                <span className={`status-pill ${animal.aiSupported ? 'pill-active' : 'pill-inactive'}`}>
-                  {animal.badge}
-                </span>
+              <div>
+                <div className="animal-card-top">
+                  <span className="animal-emoji">{animal.emoji}</span>
+                  <span className={`status-pill ${animal.aiSupported ? 'pill-active' : 'pill-info'}`}>
+                    {animal.badge}
+                  </span>
+                </div>
+                <span className="animal-category-tag">{animal.category || 'livestock'}</span>
+                <h3>{animal.name}</h3>
+                <p>{animal.details}</p>
               </div>
-              <h3>{animal.name}</h3>
-              <p>{animal.details}</p>
               <button
                 type="button"
-                className={`btn btn-small ${isSelected ? 'btn-primary' : 'btn-outline'}`}
+                className={`btn btn-small btn-block ${isSelected ? 'btn-primary' : 'btn-outline'}`}
                 onClick={(e) => {
                   e.stopPropagation()
                   setSelectedId(animal.id)
@@ -78,46 +121,34 @@ function AnimalSelection() {
       <div className="selection-summary-card">
         <div className="summary-info">
           <h2>
-            Selected Animal: {selectedAnimal.emoji} {selectedAnimal.name}
+            Selected: {selectedAnimal.emoji} {selectedAnimal.name}
           </h2>
           {selectedAnimal.aiSupported ? (
-            <p className="notice-success">
-              ✓ <strong>Demo Image & Symptom Screening available</strong> for {selectedAnimal.name}. You can proceed with image upload, symptom analysis, or both.
-            </p>
+            <div className="notice-success" style={{ marginBottom: 0 }}>
+              ✓ <strong>Demo Image Classifier + Full Symptom Rules ready</strong> for {selectedAnimal.name}. You can upload a photo, select clinical symptoms, or combine both.
+            </div>
           ) : (
-            <p className="notice-warning">
-              ⚠️ <strong>AI Image Detection is currently unavailable</strong> for {selectedAnimal.name}. We never generate fake image predictions for unsupported animals.
-            </p>
+            <div className="notice-info" style={{ marginBottom: 0 }}>
+              ✓ <strong>Full Symptom Screening + Photo Attachment ready</strong> for {selectedAnimal.name}. Upload a photo for visual quality check & veterinary report attachment, and run species-specific symptom matching.
+            </div>
           )}
         </div>
 
         <div className="summary-actions">
-          {selectedAnimal.aiSupported ? (
-            <>
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={() => navigate(`/image-detection?animal=${selectedAnimal.id}`)}
-              >
-                Proceed to Image Detection
-              </button>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={() => navigate(`/symptoms?animal=${selectedAnimal.id}`)}
-              >
-                Go to Symptom Checker
-              </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={() => navigate(`/symptoms?animal=${selectedAnimal.id}`)}
-            >
-              Continue to Symptom Checker Only
-            </button>
-          )}
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => navigate(`/symptoms?animal=${selectedAnimal.id}`)}
+          >
+            🩺 Check {selectedAnimal.name} Symptoms
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => navigate(`/image-detection?animal=${selectedAnimal.id}`)}
+          >
+            📷 {selectedAnimal.aiSupported ? `Demo Image Check (${selectedAnimal.name})` : `Upload ${selectedAnimal.name} Photo`}
+          </button>
         </div>
       </div>
     </div>

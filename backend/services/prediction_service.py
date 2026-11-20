@@ -229,6 +229,7 @@ def predict_disease_from_image(
         "confidence": confidence_percent,
         "isLowConfidence": is_low_confidence,
         "isOutOfDistribution": False,
+        "hasDiseaseClassifier": True,
         "lowConfidenceThreshold": LOW_CONFIDENCE_THRESHOLD,
         "uncertaintyNotice": uncertainty_notice,
         "classProbabilities": class_probabilities,
@@ -239,4 +240,88 @@ def predict_disease_from_image(
         "modelValidated": False,
         "modelStatusNote": MODEL_STATUS_NOTE,
         "inputShape": list(tensor.shape),
+    }
+
+
+def inspect_photo_for_symptom_guided_animal(
+    image_source: Union[str, os.PathLike, bytes],
+    animal_id: str,
+) -> Dict[str, Any]:
+    """
+    Validate and inspect an uploaded photo for animals that do not yet have a
+    dedicated image disease classifier (Goat, Sheep, Horse, Pig, Chicken, Dog, Cat, Rabbit).
+
+    Never generates fake disease probabilities. Instead, verifies visual suitability
+    (rejecting blank/solid frames), reports lighting/detail quality, attaches the
+    photo to the screening report, and directs the user to species symptom screening.
+    """
+    normalized_animal = (animal_id or "").strip().lower()
+    animal_name = normalized_animal.capitalize()
+
+    pil_img = load_rgb_image(image_source, target_size=IMAGE_SIZE)
+    rgb_array = np.asarray(pil_img, dtype=np.float32)
+
+    ood_reason = _check_visual_suitability(rgb_array)
+    if ood_reason is not None:
+        return {
+            "animalId": normalized_animal,
+            "predictedClass": "uncertain",
+            "predictedLabel": "Uncertain / Unsuitable Image",
+            "imagePrediction": "Uncertain / Unsuitable Image (Blank or Low Detail)",
+            "confidence": 0.0,
+            "isLowConfidence": True,
+            "isOutOfDistribution": True,
+            "hasDiseaseClassifier": False,
+            "lowConfidenceThreshold": LOW_CONFIDENCE_THRESHOLD,
+            "uncertaintyNotice": ood_reason,
+            "classProbabilities": [],
+            "summary": ood_reason,
+            "preventionTips": UNSUITABLE_IMAGE_GUIDANCE,
+            "modelBackbone": "Visual Quality Check Only",
+            "trainingData": "none",
+            "modelValidated": False,
+            "modelStatusNote": (
+                f"No trained image disease classifier exists for {animal_name} yet. "
+                "Photo quality was checked; use species-specific symptoms for condition screening."
+            ),
+            "inputShape": [1, IMAGE_SIZE[1], IMAGE_SIZE[0], 3],
+        }
+
+    mean_brightness = float(rgb_array.mean())
+    pixel_std = float(rgb_array.std())
+    if mean_brightness < 45.0:
+        lighting_note = "Dark / low-light photo (a brighter photo may help your veterinarian)."
+    elif mean_brightness > 220.0:
+        lighting_note = "Very bright / overexposed photo."
+    else:
+        lighting_note = "Clear lighting and usable visual contrast."
+
+    summary = (
+        f"Photo verified and attached for {animal_name} ({lighting_note} Visual detail std={pixel_std:.1f}). "
+        f"Because no trained image disease model exists for {animal_name} yet, no fake image diagnosis was generated — "
+        "combine this photo with the Symptom Checker for species-specific condition screening."
+    )
+
+    return {
+        "animalId": normalized_animal,
+        "predictedClass": "photo_attached_symptom_guided",
+        "predictedLabel": f"Photo Attached ({animal_name})",
+        "imagePrediction": f"Photo Verified & Attached (Symptom-Guided for {animal_name})",
+        "confidence": None,
+        "isLowConfidence": False,
+        "isOutOfDistribution": False,
+        "hasDiseaseClassifier": False,
+        "lowConfidenceThreshold": LOW_CONFIDENCE_THRESHOLD,
+        "uncertaintyNotice": None,
+        "classProbabilities": [],
+        "summary": summary,
+        "preventionTips": CONDITION_PREVENTION["inconclusive"],
+        "modelBackbone": "Visual Quality Check Only",
+        "trainingData": "none",
+        "modelValidated": False,
+        "modelStatusNote": (
+            f"No species-specific image classifier is trained for {animal_name} yet. "
+            "Your uploaded photo is attached for veterinary review, and condition matching uses the clinical symptom engine."
+        ),
+        "inputShape": [1, IMAGE_SIZE[1], IMAGE_SIZE[0], 3],
     }

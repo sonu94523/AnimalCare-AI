@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { OFFLINE_FALLBACK_DISEASES } from '../data/fallbackData'
+import { OFFLINE_FALLBACK_ANIMALS, OFFLINE_FALLBACK_DISEASES } from '../data/fallbackData'
 import { fetchDiseases, fetchModelInfo } from '../services/api'
 
 function DiseaseInfo() {
   const [diseases, setDiseases] = useState(OFFLINE_FALLBACK_DISEASES)
   const [modelInfo, setModelInfo] = useState(null)
+  const [animalFilter, setAnimalFilter] = useState('all')
   const [searchTerm, setSearchTerm] = useState('')
 
   useEffect(() => {
@@ -17,7 +18,7 @@ function DiseaseInfo() {
         }
       })
       .catch(() => {
-        // Fallback to SUPPORTED_DISEASES
+        // Fallback to OFFLINE_FALLBACK_DISEASES
       })
 
     fetchModelInfo()
@@ -36,50 +37,74 @@ function DiseaseInfo() {
   }, [])
 
   const filteredDiseases = diseases.filter((d) => {
-    if (!searchTerm.trim()) return true
-    const q = searchTerm.toLowerCase()
-    return (
+    const affectedText = (d.affectedAnimals || '').toLowerCase()
+    const matchesAnimal =
+      animalFilter === 'all' ||
+      affectedText.includes(animalFilter) ||
+      affectedText.includes('all 10')
+    const q = searchTerm.trim().toLowerCase()
+    const matchesSearch =
+      !q ||
       d.name.toLowerCase().includes(q) ||
-      (d.affectedAnimals || '').toLowerCase().includes(q) ||
+      affectedText.includes(q) ||
       (d.causes || '').toLowerCase().includes(q)
-    )
+    return matchesAnimal && matchesSearch
   })
 
   return (
     <div className="page-container">
       <div className="page-header">
-        <h1>Supported Disease Information</h1>
+        <h1>Supported Disease & Condition Guide</h1>
         <p>
-          Reference guide based on general veterinary literature for conditions covered by AnimalCare AI. No medication dosages or prescriptions are provided.
+          Reference guide across all 10 supported animals based on general veterinary literature. No medication dosages or prescriptions are provided.
         </p>
       </div>
 
       {modelInfo && (
         <div className="form-card" style={{ marginBottom: '1.5rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.6rem' }}>
+          <div className="model-status-header">
             <h3 style={{ margin: 0 }}>MobileNetV2 Image Model Status</h3>
             <span className="status-pill pill-inactive">
               Not Validated on Real Animals (Demo Only)
             </span>
           </div>
-          <p className="result-muted" style={{ marginBottom: '0.65rem' }}>
+          <p className="result-muted" style={{ marginBottom: '0.75rem' }}>
             Backbone: <strong>{modelInfo.backbone}</strong> | Input:{' '}
             <strong>{(modelInfo.inputShape || [224, 224, 3]).join(' × ')} RGB</strong> | Checkpoint:{' '}
             <strong>{modelInfo.modelLoaded ? 'Loaded' : 'Not Trained Yet'}</strong> | Training Data:{' '}
             <strong>{modelInfo.trainingData || 'synthetic / unverified'}</strong>
           </p>
-          <div className="notice-warning" style={{ margin: 0 }}>
+          <div className="notice-warning" style={{ marginBottom: 0 }}>
             {modelInfo.statusNote ||
               'This image model has not been validated on real animal photographs and must not be used as a clinical diagnosis.'}
           </div>
         </div>
       )}
 
-      <div className="form-group" style={{ marginBottom: '1.25rem' }}>
+      <div className="filter-bar">
+        <div className="category-tabs">
+          <button
+            type="button"
+            className={`category-tab ${animalFilter === 'all' ? 'active' : ''}`}
+            onClick={() => setAnimalFilter('all')}
+          >
+            All Animals
+          </button>
+          {OFFLINE_FALLBACK_ANIMALS.map((a) => (
+            <button
+              key={a.id}
+              type="button"
+              className={`category-tab ${animalFilter === a.id ? 'active' : ''}`}
+              onClick={() => setAnimalFilter(a.id)}
+            >
+              {a.emoji} {a.name}
+            </button>
+          ))}
+        </div>
         <input
           type="text"
-          className="form-select"
-          placeholder="Search condition by name, animal, or cause..."
+          className="search-input"
+          placeholder="Search condition or cause..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
         />
@@ -123,13 +148,13 @@ function DiseaseInfo() {
         ))}
       </div>
 
-      <div className="vet-advisory-box" style={{ marginTop: '1.5rem' }}>
+      <div className="vet-advisory-box">
         <strong>Important Notice:</strong> Always consult a registered veterinary practitioner for accurate diagnosis and treatment plans.
       </div>
 
-      <div className="form-actions" style={{ marginTop: '1.25rem' }}>
+      <div className="form-actions">
         <Link to="/select-animal" className="btn btn-primary">
-          Start Disease Detection
+          Start Health Screening
         </Link>
       </div>
     </div>

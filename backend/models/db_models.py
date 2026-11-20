@@ -10,6 +10,7 @@ class Animal(db.Model):
     slug = db.Column(db.String(32), unique=True, nullable=False)
     name = db.Column(db.String(64), nullable=False)
     emoji = db.Column(db.String(16), nullable=False)
+    category = db.Column(db.String(32), default="livestock", nullable=False)
     ai_supported = db.Column(db.Boolean, default=False, nullable=False)
     badge = db.Column(db.String(128), nullable=False)
     details = db.Column(db.Text, nullable=False)
@@ -19,6 +20,7 @@ class Animal(db.Model):
             "id": self.slug,
             "name": self.name,
             "emoji": self.emoji,
+            "category": self.category or "livestock",
             "aiSupported": self.ai_supported,
             "badge": self.badge,
             "details": self.details,

@@ -8,9 +8,9 @@ A college-level web application for preliminary animal disease screening combini
 ---
 
 ## Key Features
-- **6 Animal Categories Displayed:**
-  - **Demo Image + Symptom Screening:** **Cow**, **Buffalo**
-  - **Symptom Reference Only (AI Image Detection Unavailable):** **Goat**, **Sheep**, **Dog**, **Cat** (blocked server-side for image inference)
+- **10 Supported Animal Species (Livestock, Poultry & Pets):**
+  - **Demo MobileNetV2 Image Classifier + Full Symptom Screening:** **Cow**, **Buffalo**
+  - **Photo Verification/Attachment + Full Species Symptom Screening:** **Goat**, **Sheep**, **Horse**, **Pig**, **Chicken**, **Dog**, **Cat**, **Rabbit** (photos are validated, EXIF-stripped, quality-checked, and attached for veterinary review without faking disease image probabilities)
 - **PyTorch MobileNetV2 Transfer Learning Pipeline (`ml/`):**
   - Preprocesses uploaded JPG/JPEG/PNG photos (`max 5 MB`, `MAX_IMAGE_PIXELS = 25M`) by re-encoding through PIL to strip EXIF/GPS metadata, resizing to `224 × 224` RGB, and applying ImageNet mean/std normalization.
   - Defaults to `pretrained=True` (`MobileNet_V2_Weights.IMAGENET1K_V1`) with `AdaptiveAvgPool2d -> Linear(1280, 128) -> ReLU -> Dropout(0.3) -> Linear(128, 3)` and per-epoch on-the-fly batch augmentation during training.

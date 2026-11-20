@@ -1,8 +1,9 @@
 import React from 'react'
-import { useLocation, Link } from 'react-router-dom'
+import { useLocation, useNavigate, Link } from 'react-router-dom'
 
 function Results() {
   const location = useLocation()
+  const navigate = useNavigate()
   const resultData = location.state
 
   if (!resultData) {
@@ -15,7 +16,7 @@ function Results() {
         <div className="form-card empty-history">
           <h3>No Screening Run Yet</h3>
           <p>
-            Select an animal category and run a symptom check or demo image upload to view results here.
+            Select any of the 10 supported animals and run a symptom check or photo upload to view results here.
           </p>
           <div className="form-actions" style={{ justifyContent: 'center' }}>
             <Link to="/select-animal" className="btn btn-primary">
@@ -37,11 +38,17 @@ function Results() {
   const hasMatchedConds =
     Array.isArray(resultData.matchedConditions) && resultData.matchedConditions.length > 0
 
+  const isPhotoOnlyWithoutClassifier =
+    hasImage && !hasSymptoms && resultData.hasDiseaseClassifier === false && !resultData.isOutOfDistribution
+
   const showUnvalidatedBanner =
-    hasImage && (resultData.modelValidated === false || comb?.modelValidated === false)
+    hasImage &&
+    resultData.hasDiseaseClassifier !== false &&
+    (resultData.modelValidated === false || comb?.modelValidated === false)
 
   const isWarning = Boolean(
-    comb?.hasConflict ||
+    resultData.hasRedFlag ||
+      comb?.hasConflict ||
       comb?.isUncertain ||
       resultData.isLowConfidence ||
       resultData.isOutOfDistribution ||
@@ -63,7 +70,7 @@ function Results() {
   const scoreCaption =
     comb?.mode === 'image_only' || (hasImage && !hasSymptoms)
       ? 'Image Confidence'
-      : comb?.mode === 'symptom_only' || (hasSymptoms && !hasImage)
+      : comb?.mode === 'symptom_only' || (hasSymptoms && !hasImage) || resultData.hasDiseaseClassifier === false
       ? 'Rule Match'
       : 'Combined Score'
 
@@ -85,12 +92,18 @@ function Results() {
   return (
     <div className="page-container">
       <div className="page-header">
-        <h1>Screening Result</h1>
-        <p>Clear summary of your screening check.</p>
+        <h1>Screening Report</h1>
+        <p>Preliminary health screening summary for {resultData.animal}.</p>
       </div>
 
+      {resultData.hasRedFlag && resultData.urgencyNotice && (
+        <div className="notice-urgent">
+          🚨 <strong>URGENT VETERINARY ALERT:</strong> {resultData.urgencyNotice}
+        </div>
+      )}
+
       {showUnvalidatedBanner && (
-        <div className="notice-warning" style={{ marginBottom: '1rem' }}>
+        <div className="notice-warning">
           <strong>Unvalidated Demo Model — Non-Diagnostic:</strong>{' '}
           {resultData.modelStatusNote ||
             'This image model has not been validated on real animals (trained on synthetic placeholder data). Do not treat the image output as a medical diagnosis.'}
@@ -115,11 +128,39 @@ function Results() {
         )}
       </div>
 
+      {isPhotoOnlyWithoutClassifier && resultData.uploadId && (
+        <div className="notice-info no-print" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
+          <span>
+            <strong>Next Step:</strong> Your {resultData.animal} photo is verified and attached. Add observed clinical symptoms to run species-specific condition matching.
+          </span>
+          <button
+            type="button"
+            className="btn btn-primary btn-small"
+            onClick={() =>
+              navigate(`/symptoms?animal=${resultData.animalId || 'cow'}`, {
+                state: {
+                  uploadId: resultData.uploadId,
+                  predictionResult: {
+                    imagePrediction: resultData.imagePrediction,
+                    predictedClass: resultData.predictedClass,
+                    hasDiseaseClassifier: false
+                  },
+                  imagePath: resultData.imagePath,
+                  previewUrl: resultData.previewUrl,
+                  imageName: resultData.imageName
+                }
+              })
+            }
+          >
+            Add {resultData.animal} Symptoms Now
+          </button>
+        </div>
+      )}
+
       {/* Two-Column Clean Breakdown */}
       <div className="results-grid">
-        {/* Left Card: Detection Evidence */}
         <div className="result-card">
-          <h3>1. Detection Breakdown</h3>
+          <h3>1. Screening Evidence</h3>
 
           <div className="result-kpi-row">
             <div className="result-kpi-box">
@@ -127,7 +168,7 @@ function Results() {
               <span className="result-kpi-value">{resultData.animal}</span>
             </div>
             <div className="result-kpi-box">
-              <span className="result-kpi-label">Image Check</span>
+              <span className="result-kpi-label">Photo Status</span>
               <span className="result-kpi-value">
                 {hasImage ? resultData.imagePrediction : 'Not Uploaded'}
               </span>
@@ -141,14 +182,14 @@ function Results() {
           </div>
 
           {resultData.previewUrl && (
-            <div className="image-preview-box" style={{ width: '100%', marginBottom: '1rem' }}>
+            <div className="image-preview-box" style={{ width: '100%' }}>
               <span className="result-kpi-label">Uploaded Photo ({resultData.imageName})</span>
               <img src={resultData.previewUrl} alt="Uploaded animal" className="preview-img" />
             </div>
           )}
 
           {hasProbs && (
-            <div className="result-subsection" style={{ marginTop: '0.5rem' }}>
+            <div className="result-subsection">
               <h4>Demo Image Model Probabilities (Non-Diagnostic)</h4>
               <div className="prob-list">
                 {resultData.classProbabilities.map((item) => (
@@ -172,7 +213,7 @@ function Results() {
           {hasSymptoms && (
             <div className="result-subsection">
               <h4>Observed Symptoms</h4>
-              <div className="symptom-tags" style={{ marginTop: '0.4rem' }}>
+              <div className="symptom-tags">
                 {resultData.symptoms.map((sym, idx) => (
                   <span key={idx} className="symptom-tag">
                     {sym}
@@ -205,49 +246,31 @@ function Results() {
           )}
         </div>
 
-        {/* Right Card: Recommended Action Steps */}
         <div className="result-card">
           <h3>2. Recommended Next Steps</h3>
-          <div className="steps-grid" style={{ gridTemplateColumns: '1fr', gap: '0.75rem', marginBottom: '1rem' }}>
+          <div className="action-step-list">
             {preventionList.map((tip, idx) => (
-              <div
-                key={idx}
-                className="result-box"
-                style={{
-                  margin: 0,
-                  display: 'flex',
-                  alignItems: 'flex-start',
-                  gap: '0.75rem'
-                }}
-              >
-                <span
-                  className="step-number"
-                  style={{
-                    margin: 0,
-                    width: '28px',
-                    height: '28px',
-                    fontSize: '0.85rem',
-                    flexShrink: 0
-                  }}
-                >
-                  {idx + 1}
-                </span>
-                <span style={{ fontSize: '0.94rem', color: '#1f2937' }}>{tip}</span>
+              <div key={idx} className="action-step-item">
+                <span className="action-step-num">{idx + 1}</span>
+                <span>{tip}</span>
               </div>
             ))}
           </div>
 
           <div className="vet-advisory-box">
-            <strong>Veterinary Note:</strong> This tool provides preliminary academic screening only. Suspected FMD or LSD should be reported promptly to local veterinary authorities. Always consult a qualified veterinarian before starting treatment.
+            <strong>Veterinary Note:</strong> This tool provides preliminary academic screening only. Suspected notifiable diseases (FMD, LSD, PPR, Swine Fever, Newcastle Disease) should be reported promptly to local veterinary authorities. Always consult a qualified veterinarian before starting treatment.
           </div>
         </div>
       </div>
 
-      <div className="form-actions" style={{ marginTop: '1.5rem' }}>
+      <div className="form-actions no-print">
         <Link to="/select-animal" className="btn btn-primary">
-          Start New Detection
+          Start New Screening
         </Link>
-        <Link to="/diseases" className="btn btn-secondary">
+        <button type="button" className="btn btn-secondary" onClick={() => window.print()}>
+          🖨️ Print / Save Vet Report
+        </button>
+        <Link to="/diseases" className="btn btn-outline">
           Disease Reference Guide
         </Link>
         <Link to="/history" className="btn btn-outline">

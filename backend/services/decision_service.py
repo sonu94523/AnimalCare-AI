@@ -24,6 +24,7 @@ def evaluate_combined_decision(
     # Mode 1: Both Image and Symptoms provided
     if image_result and symptom_result:
         img_ood = bool(image_result.get("isOutOfDistribution"))
+        has_img_classifier = bool(image_result.get("hasDiseaseClassifier", True))
         img_class = image_result.get("predictedClass")
         img_label = image_result.get("predictedLabel", "Unknown")
         img_conf = float(image_result.get("confidence") or 0.0)
@@ -39,6 +40,25 @@ def evaluate_combined_decision(
         for tip in (symptom_result.get("preventionTips") or []) + (image_result.get("preventionTips") or []):
             if tip not in merged_tips:
                 merged_tips.append(tip)
+
+        if not has_img_classifier and not img_ood:
+            is_low = sym_score < 60.0 or sym_cond_id == "inconclusive"
+            return {
+                "mode": "combined",
+                "animal": animal_name,
+                "finalConclusion": f"Symptom-Guided Indication: {sym_cond_name}",
+                "agreementStatus": "Photo Attached + Species Symptom Analysis",
+                "combinedConfidence": round(sym_score, 1),
+                "isUncertain": is_low,
+                "hasConflict": False,
+                "modelValidated": False,
+                "trainingData": "symptom_rules",
+                "explanation": (
+                    f"Uploaded {animal_name} photo is verified and attached for veterinary reference. "
+                    f"Clinical symptom analysis indicates '{sym_cond_name}' ({sym_score}% rule match)."
+                ),
+                "preventionTips": symptom_result.get("preventionTips") or [],
+            }
 
         if img_ood:
             return {
@@ -127,6 +147,7 @@ def evaluate_combined_decision(
     # Mode 2: Image-Only Screening
     if image_result:
         img_ood = bool(image_result.get("isOutOfDistribution"))
+        has_img_classifier = bool(image_result.get("hasDiseaseClassifier", True))
         img_label = image_result.get("predictedLabel", "Unknown")
         img_conf = float(image_result.get("confidence") or 0.0)
         img_low_conf = bool(image_result.get("isLowConfidence", img_conf < 60.0))
@@ -145,6 +166,21 @@ def evaluate_combined_decision(
                 "modelValidated": model_validated,
                 "trainingData": training_data,
                 "explanation": image_result.get("uncertaintyNotice") or "Image could not be classified.",
+                "preventionTips": image_result.get("preventionTips") or [],
+            }
+
+        if not has_img_classifier:
+            return {
+                "mode": "image_only",
+                "animal": animal_name,
+                "finalConclusion": f"Photo Verified for {animal_name} — Add Symptoms for Disease Screening",
+                "agreementStatus": "Photo Attached (Species Symptom Check Needed)",
+                "combinedConfidence": None,
+                "isUncertain": True,
+                "hasConflict": False,
+                "modelValidated": False,
+                "trainingData": "none",
+                "explanation": image_result.get("summary") or f"Photo attached for {animal_name}.",
                 "preventionTips": image_result.get("preventionTips") or [],
             }
 

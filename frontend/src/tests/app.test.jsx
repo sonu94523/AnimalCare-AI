@@ -202,4 +202,39 @@ describe('AnimalCare AI Frontend Flows', () => {
     })
     expect(screen.queryByText('2026-11-20T17:30:00Z')).not.toBeInTheDocument()
   })
+
+  it('displays urgent veterinary red-flag alert banner on Results when hasRedFlag is true', () => {
+    const urgentState = {
+      animal: 'Dog',
+      animalId: 'dog',
+      imageName: null,
+      imagePath: null,
+      previewUrl: null,
+      imagePrediction: 'No image uploaded (Symptom-only check)',
+      confidence: null,
+      symptoms: ['Bloody or foul-smelling dark diarrhea (Urgent red flag)', 'Repeated vomiting or retching'],
+      symptomTopCondition: 'Canine Parvovirus / Acute Gastroenteritis Signs',
+      symptomMatchScore: 87.5,
+      hasRedFlag: true,
+      urgencyNotice: 'Urgent clinical red flag reported (Bloody diarrhea). Contact a veterinarian immediately.',
+      combinedDecision: {
+        mode: 'symptom_only',
+        finalConclusion: 'Symptom-Based Indication: Canine Parvovirus / Acute Gastroenteritis Signs',
+        agreementStatus: 'Symptom-Only Screening (No Image Uploaded)',
+        combinedConfidence: 87.5,
+        explanation: 'High rule-based symptom match for Canine Parvovirus.'
+      }
+    }
+
+    render(
+      <MemoryRouter initialEntries={[{ pathname: '/results', state: urgentState }]}>
+        <Routes>
+          <Route path="/results" element={<Results />} />
+        </Routes>
+      </MemoryRouter>
+    )
+
+    expect(screen.getByText(/URGENT VETERINARY ALERT/i)).toBeInTheDocument()
+    expect(screen.getByText(/Rule Match/i)).toBeInTheDocument()
+  })
 })

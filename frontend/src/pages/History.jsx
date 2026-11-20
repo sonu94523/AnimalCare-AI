@@ -145,6 +145,7 @@ function History() {
         confidence: imgRes?.confidence ?? (isValidLocalPath ? rec.confidence : null),
         isLowConfidence: imgRes?.isLowConfidence,
         isOutOfDistribution: imgRes?.isOutOfDistribution,
+        hasDiseaseClassifier: imgRes?.hasDiseaseClassifier,
         uncertaintyNotice: imgRes?.uncertaintyNotice,
         classProbabilities: imgRes?.classProbabilities,
         modelValidated: imgRes ? imgRes.modelValidated : (isValidLocalPath ? false : undefined),
@@ -154,6 +155,9 @@ function History() {
         symptomTopCondition: symRes?.topCondition,
         symptomMatchScore: symRes?.matchScorePercent ?? (!isValidLocalPath ? rec.confidence : null),
         symptomMatchLevel: symRes?.matchLevel,
+        hasRedFlag: symRes?.hasRedFlag,
+        redFlags: symRes?.redFlags,
+        urgencyNotice: symRes?.urgencyNotice,
         matchedConditions: symRes?.matchedConditions || [],
         symptomAnalysis: symRes?.symptomAnalysis || rec.symptomAnalysis,
         preventionTips: details.preventionTips || combDec?.preventionTips || symRes?.preventionTips || imgRes?.preventionTips,
@@ -165,31 +169,21 @@ function History() {
   return (
     <div className="page-container">
       <div className="page-header">
-        <h1>Prediction History</h1>
+        <h1>Screening History</h1>
         <p>
-          Review, filter, and manage previously saved animal disease screening records stored in the SQLite database.
+          Review, filter, and manage saved screening reports across all 10 supported animals. Times are shown in your local timezone.
         </p>
       </div>
 
       <div className="form-card">
-        <div
-          style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            gap: '0.75rem',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: '1.25rem'
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <label htmlFor="history-animal-filter" style={{ fontWeight: 600 }}>
-              Filter by Animal:
+        <div className="history-toolbar">
+          <div className="history-filter-group">
+            <label htmlFor="history-animal-filter">
+              <strong>Filter by Animal:</strong>
             </label>
             <select
               id="history-animal-filter"
-              className="form-select"
-              style={{ width: 'auto', minWidth: '180px' }}
+              className="form-select history-filter-select"
               value={animalFilter}
               onChange={(e) => {
                 setLoading(true)
@@ -198,7 +192,7 @@ function History() {
                 setErrorMsg('')
               }}
             >
-              <option value="all">All Animals</option>
+              <option value="all">All Animals (10)</option>
               {animals.map((a) => (
                 <option key={a.id} value={a.id}>
                   {a.emoji} {a.name}
@@ -207,7 +201,7 @@ function History() {
             </select>
           </div>
 
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <div className="history-toolbar-actions">
             <button
               type="button"
               className="btn btn-outline btn-small"
@@ -232,31 +226,31 @@ function History() {
           </div>
         </div>
 
-        {statusMsg && <div className="notice-success" style={{ marginBottom: '1rem' }}>{statusMsg}</div>}
-        {errorMsg && <div className="notice-error" style={{ marginBottom: '1rem' }}>{errorMsg}</div>}
+        {statusMsg && <div className="notice-success">{statusMsg}</div>}
+        {errorMsg && <div className="notice-error">{errorMsg}</div>}
 
         {loading ? (
-          <p className="result-muted">Loading prediction history...</p>
+          <p className="result-muted">Loading screening history...</p>
         ) : records.length === 0 ? (
           <div className="empty-history">
             <h3>No Saved Records Found</h3>
             <p>
-              Run an image classification or symptom check to automatically store preliminary screening records in the SQLite database.
+              Run a photo upload or symptom check for any of the 10 animals to automatically save screening reports here.
             </p>
             <Link to="/select-animal" className="btn btn-primary">
-              Run a Preliminary Check
+              Run a Health Screening
             </Link>
           </div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
+          <div className="table-scroll">
             <table className="history-table">
               <thead>
                 <tr>
-                  <th>Date</th>
+                  <th>Date & Time</th>
                   <th>Animal</th>
-                  <th>Image Prediction</th>
-                  <th>Score / Confidence</th>
-                  <th>Symptom & Screening Summary</th>
+                  <th>Photo Status</th>
+                  <th>Score</th>
+                  <th>Screening Summary</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -271,7 +265,7 @@ function History() {
                     <td>
                       {rec.confidence !== null && rec.confidence !== undefined
                         ? `${rec.confidence}%`
-                        : 'N/A'}
+                        : '—'}
                     </td>
                     <td>
                       <div>{rec.symptomAnalysis}</div>
@@ -282,7 +276,7 @@ function History() {
                       )}
                     </td>
                     <td>
-                      <div style={{ display: 'flex', gap: '0.4rem' }}>
+                      <div className="history-row-actions">
                         <button
                           type="button"
                           className="btn btn-small btn-secondary"

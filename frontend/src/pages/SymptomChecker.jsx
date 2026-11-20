@@ -4,6 +4,7 @@ import { OFFLINE_FALLBACK_ANIMALS, OFFLINE_FALLBACK_SYMPTOMS } from '../data/fal
 import { fetchAnimals, fetchSymptoms, submitSymptomForm, submitCombinedPrediction } from '../services/api'
 
 export const SYMPTOM_LIST = OFFLINE_FALLBACK_SYMPTOMS
+const RED_FLAG_IDS = new Set(['unable_to_stand', 'bloody_diarrhea', 'twisted_neck_paralysis'])
 
 function SymptomChecker() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -77,9 +78,7 @@ function SymptomChecker() {
 
     setSubmitting(true)
     try {
-      const hasAttachedImage = Boolean(
-        attachedImageState.uploadId && currentAnimal.aiSupported
-      )
+      const hasAttachedImage = Boolean(attachedImageState.uploadId)
 
       if (hasAttachedImage) {
         const combinedResp = await submitCombinedPrediction({
@@ -98,20 +97,24 @@ function SymptomChecker() {
             imageName: attachedImageState.imageName,
             imagePath: attachedImageState.imagePath || null,
             previewUrl: attachedImageState.previewUrl || null,
-            imagePrediction: imgRes.imagePrediction,
-            predictedClass: imgRes.predictedClass,
-            confidence: imgRes.confidence,
-            isLowConfidence: imgRes.isLowConfidence,
-            isOutOfDistribution: imgRes.isOutOfDistribution,
-            uncertaintyNotice: imgRes.uncertaintyNotice,
-            classProbabilities: imgRes.classProbabilities,
-            modelValidated: imgRes.modelValidated,
-            trainingData: imgRes.trainingData,
-            modelStatusNote: imgRes.modelStatusNote,
+            imagePrediction: imgRes?.imagePrediction,
+            predictedClass: imgRes?.predictedClass,
+            confidence: imgRes?.confidence,
+            isLowConfidence: imgRes?.isLowConfidence,
+            isOutOfDistribution: imgRes?.isOutOfDistribution,
+            hasDiseaseClassifier: imgRes?.hasDiseaseClassifier,
+            uncertaintyNotice: imgRes?.uncertaintyNotice,
+            classProbabilities: imgRes?.classProbabilities,
+            modelValidated: imgRes?.modelValidated,
+            trainingData: imgRes?.trainingData,
+            modelStatusNote: imgRes?.modelStatusNote,
             symptoms: symRes.selectedSymptoms || selectedSymptomIds.map((id) => symptomLabelById[id] || id),
             symptomTopCondition: symRes.topCondition,
             symptomMatchScore: symRes.matchScorePercent,
             symptomMatchLevel: symRes.matchLevel,
+            hasRedFlag: symRes.hasRedFlag,
+            redFlags: symRes.redFlags,
+            urgencyNotice: symRes.urgencyNotice,
             matchedConditions: symRes.matchedConditions || [],
             symptomAnalysis: symRes.symptomAnalysis,
             preventionTips: combDec?.preventionTips || symRes.preventionTips,
@@ -128,14 +131,15 @@ function SymptomChecker() {
           animalId: currentAnimal.id,
           imageName: null,
           previewUrl: null,
-          imagePrediction: currentAnimal.aiSupported
-            ? 'No image uploaded (Symptom-only check)'
-            : `AI Image Detection unavailable for ${currentAnimal.name}`,
+          imagePrediction: 'No image uploaded (Symptom-only check)',
           confidence: null,
           symptoms: response.selectedSymptoms || selectedSymptomIds.map((id) => symptomLabelById[id] || id),
           symptomTopCondition: response.topCondition,
           symptomMatchScore: response.matchScorePercent,
           symptomMatchLevel: response.matchLevel,
+          hasRedFlag: response.hasRedFlag,
+          redFlags: response.redFlags,
+          urgencyNotice: response.urgencyNotice,
           matchedConditions: response.matchedConditions || [],
           symptomAnalysis: response.symptomAnalysis,
           preventionTips: response.preventionTips,
@@ -156,19 +160,18 @@ function SymptomChecker() {
   return (
     <div className="page-container">
       <div className="page-header">
-        <h1>Symptom-Based Disease Checker</h1>
+        <h1>Symptom-Based Health Checker</h1>
         <p>
-          Select an animal and check all observed clinical symptoms. Both general and animal-specific symptoms are provided below.
+          Select any of the 10 supported animals and check all observed clinical signs for tailored condition matching.
         </p>
       </div>
 
       <form className="form-card" onSubmit={handleAnalyzeSymptoms}>
-        {attachedImageState.uploadId && attachedImageState.predictionResult && currentAnimal.aiSupported && (
-          <div className="notice-success" style={{ marginBottom: '1.25rem' }}>
-            <strong>✓ Uploaded Image Attached for Combined Screening:</strong>{' '}
-            {attachedImageState.imageName || 'Animal photo'} — MobileNetV2 demo output:{' '}
-            <strong>{attachedImageState.predictionResult.imagePrediction}</strong> (
-            {attachedImageState.predictionResult.confidence}% confidence). Select observed clinical symptoms below to cross-check visual and symptomatic evidence.
+        {attachedImageState.uploadId && attachedImageState.predictionResult && (
+          <div className="notice-success">
+            <strong>✓ Photo Attached for Combined Screening:</strong>{' '}
+            {attachedImageState.imageName || 'Animal photo'} —{' '}
+            <strong>{attachedImageState.predictionResult.imagePrediction}</strong>. Select observed clinical symptoms below to generate your full combined report.
           </div>
         )}
         <div className="form-group">
@@ -184,7 +187,7 @@ function SymptomChecker() {
           >
             {animals.map((a) => (
               <option key={a.id} value={a.id}>
-                {a.emoji} {a.name} ({a.aiSupported ? 'Demo Image + Symptom Check' : 'Symptom Reference Only'})
+                {a.emoji} {a.name} ({a.category || 'livestock'})
               </option>
             ))}
           </select>
@@ -215,15 +218,18 @@ function SymptomChecker() {
         {specificSymptoms.length > 0 && (
           <div className="form-group">
             <label>
-              3. Specific Symptoms for {currentAnimal.emoji} {currentAnimal.name}
+              3. Specific & Red-Flag Signs for {currentAnimal.emoji} {currentAnimal.name}
             </label>
             <div className="symptom-checkbox-grid">
               {specificSymptoms.map((symptom) => {
                 const checked = selectedSymptomIds.includes(symptom.id)
+                const isRedFlag = RED_FLAG_IDS.has(symptom.id)
                 return (
                   <label
                     key={symptom.id}
-                    className={`symptom-checkbox-item ${checked ? 'symptom-checked' : ''}`}
+                    className={`symptom-checkbox-item ${checked ? 'symptom-checked' : ''} ${
+                      isRedFlag ? 'symptom-redflag' : ''
+                    }`}
                   >
                     <input
                       type="checkbox"
@@ -276,7 +282,7 @@ function SymptomChecker() {
 
         <div className="form-actions">
           <button type="submit" className="btn btn-primary" disabled={submitting}>
-            {submitting ? 'Submitting Symptoms...' : 'Submit & Analyze Symptoms'}
+            {submitting ? 'Analyzing Symptoms...' : 'Submit & Analyze Symptoms'}
           </button>
           <button
             type="button"
