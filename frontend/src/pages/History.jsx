@@ -12,6 +12,7 @@ function History() {
   const navigate = useNavigate()
   const [records, setRecords] = useState([])
   const [animalFilter, setAnimalFilter] = useState('all')
+  const [adminToken, setAdminToken] = useState(import.meta.env.VITE_ADMIN_TOKEN || '')
   const [loading, setLoading] = useState(true)
   const [statusMsg, setStatusMsg] = useState('')
   const [errorMsg, setErrorMsg] = useState('')
@@ -33,42 +34,72 @@ function History() {
     loadRecords(animalFilter)
   }, [animalFilter, loadRecords])
 
+  const ensureAdminToken = () => {
+    if (adminToken.trim()) return adminToken.trim()
+    const entered = window.prompt('Enter the server ADMIN_TOKEN to modify history:')
+    if (entered && entered.trim()) {
+      setAdminToken(entered.trim())
+      return entered.trim()
+    }
+    return ''
+  }
+
   const handleDeleteRecord = async (recordId) => {
+    if (!window.confirm(`Delete screening record #${recordId}? This cannot be undone.`)) {
+      return
+    }
+    const token = ensureAdminToken()
+    if (!token) return
+
     setErrorMsg('')
     setStatusMsg('')
     try {
-      await deleteHistoryRecord(recordId)
+      await deleteHistoryRecord(recordId, token)
       setRecords((prev) => prev.filter((r) => r.id !== recordId))
       setStatusMsg(`Deleted screening record #${recordId}.`)
-    } catch {
-      setErrorMsg('Could not delete record. Please verify the Flask backend is running.')
+    } catch (err) {
+      setErrorMsg(
+        err?.response?.data?.error ||
+          'Could not delete record. Verify the backend is running and ADMIN_TOKEN matches.'
+      )
     }
   }
 
   const handleClearAll = async () => {
     if (records.length === 0) return
+    if (!window.confirm(`Clear ALL ${records.length} saved screening record(s)? This cannot be undone.`)) {
+      return
+    }
+    const token = ensureAdminToken()
+    if (!token) return
+
     setErrorMsg('')
     setStatusMsg('')
     try {
-      await clearAllHistory()
+      await clearAllHistory(token)
       setRecords([])
       setStatusMsg('All prediction history records have been cleared.')
-    } catch {
-      setErrorMsg('Could not clear prediction history. Please verify the Flask backend is running.')
+    } catch (err) {
+      setErrorMsg(
+        err?.response?.data?.error ||
+          'Could not clear prediction history. Verify the backend is running and ADMIN_TOKEN matches.'
+      )
     }
   }
 
   const handleViewRecord = (rec) => {
-    const previewUrl = rec.imagePath ? `${API_BASE_URL}${rec.imagePath}` : null
+    const isValidLocalPath = typeof rec.imagePath === 'string' && rec.imagePath.startsWith('/uploads/')
+    const previewUrl = isValidLocalPath ? `${API_BASE_URL}${rec.imagePath}` : null
     navigate('/results', {
       state: {
         animal: rec.animal,
         animalId: (rec.animal || 'cow').toLowerCase(),
-        imageName: rec.imagePath ? rec.imagePath.split('/').pop() : null,
-        imagePath: rec.imagePath,
+        imageName: isValidLocalPath ? rec.imagePath.split('/').pop() : null,
+        imagePath: isValidLocalPath ? rec.imagePath : null,
         previewUrl,
         imagePrediction: rec.imagePrediction,
         confidence: rec.confidence,
+        modelValidated: isValidLocalPath ? false : undefined,
         symptoms: Array.isArray(rec.symptoms) ? rec.symptoms : [],
         symptomAnalysis: rec.symptomAnalysis
       }

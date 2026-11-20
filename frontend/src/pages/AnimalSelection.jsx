@@ -8,16 +8,16 @@ export const ANIMALS = [
     name: 'Cow',
     emoji: '🐄',
     aiSupported: true,
-    badge: 'AI Image + Symptom Detection Available',
-    details: 'Full support for MobileNetV2 image classification and rule-based symptom analysis.'
+    badge: 'Demo Image + Symptom Screening',
+    details: 'Supports MobileNetV2 demo image screening (not clinically validated) and rule-based symptom analysis.'
   },
   {
     id: 'buffalo',
     name: 'Buffalo',
     emoji: '🐃',
     aiSupported: true,
-    badge: 'AI Image + Symptom Detection Available',
-    details: 'Full support for MobileNetV2 image classification and rule-based symptom analysis.'
+    badge: 'Demo Image + Symptom Screening',
+    details: 'Supports MobileNetV2 demo image screening (not clinically validated) and rule-based symptom analysis.'
   },
   {
     id: 'goat',

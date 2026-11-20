@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useSearchParams, useNavigate, Link } from 'react-router-dom'
 import { ANIMALS } from './AnimalSelection'
 import { uploadAnimalImage, predictAnimalImage } from '../services/api'
@@ -10,17 +10,36 @@ const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024 // 5 MB
 function ImageDetection() {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
-  const initialAnimal = searchParams.get('animal') || 'cow'
-  const [animalId, setAnimalId] = useState(initialAnimal)
+  const paramAnimal = searchParams.get('animal') || 'cow'
+  const [animalId, setAnimalId] = useState(paramAnimal)
   const [selectedFile, setSelectedFile] = useState(null)
   const [previewUrl, setPreviewUrl] = useState('')
   const [uploading, setUploading] = useState(false)
-  const [uploadedInfo, setUploadedInfo] = useState(null)
-  const [predictionResult, setPredictionResult] = useState(null)
   const [errorMsg, setErrorMsg] = useState('')
   const [successMsg, setSuccessMsg] = useState('')
 
+  useEffect(() => {
+    if (ANIMALS.some((a) => a.id === paramAnimal)) {
+      setAnimalId(paramAnimal)
+    }
+  }, [paramAnimal])
+
+  useEffect(() => {
+    return () => {
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl)
+      }
+    }
+  }, [previewUrl])
+
   const currentAnimal = ANIMALS.find((a) => a.id === animalId) || ANIMALS[0]
+
+  const updatePreview = (file) => {
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl)
+    }
+    setPreviewUrl(file ? URL.createObjectURL(file) : '')
+  }
 
   const validateFile = (file) => {
     const ext = file.name.includes('.') ? file.name.split('.').pop().toLowerCase() : ''
@@ -40,12 +59,10 @@ function ImageDetection() {
     const file = e.target.files?.[0]
     setErrorMsg('')
     setSuccessMsg('')
-    setUploadedInfo(null)
-    setPredictionResult(null)
 
     if (!file) {
       setSelectedFile(null)
-      setPreviewUrl('')
+      updatePreview(null)
       return
     }
 
@@ -53,29 +70,32 @@ function ImageDetection() {
     if (validationError) {
       setErrorMsg(validationError)
       setSelectedFile(null)
-      setPreviewUrl('')
+      updatePreview(null)
       e.target.value = ''
       return
     }
 
     setSelectedFile(file)
-    setPreviewUrl(URL.createObjectURL(file))
+    updatePreview(file)
   }
 
-  const handleLoadSampleDemoImage = (sampleType) => {
+  const handleLoadSyntheticDemoImage = (sampleType) => {
     setErrorMsg('')
     setSuccessMsg('')
-    setUploadedInfo(null)
-    setPredictionResult(null)
 
     const canvas = document.createElement('canvas')
     canvas.width = 224
     canvas.height = 224
     const ctx = canvas.getContext('2d')
 
+    // Synthetic coloured-noise placeholder patterns used only to test the pipeline.
     if (sampleType === 'healthy') {
       ctx.fillStyle = 'rgb(90, 155, 85)'
       ctx.fillRect(0, 0, 224, 224)
+      ctx.fillStyle = 'rgb(102, 168, 96)'
+      for (let i = 0; i < 40; i += 1) {
+        ctx.fillRect((i * 37) % 210, (i * 53) % 210, 10, 10)
+      }
     } else if (sampleType === 'lsd') {
       ctx.fillStyle = 'rgb(165, 110, 80)'
       ctx.fillRect(0, 0, 224, 224)
@@ -113,52 +133,14 @@ function ImageDetection() {
 
     canvas.toBlob((blob) => {
       if (!blob) return
-      const fname = `sample_${currentAnimal.id}_${sampleType}.png`
+      const fname = `synthetic_${currentAnimal.id}_${sampleType}.png`
       const demoFile = new File([blob], fname, { type: 'image/png' })
       setSelectedFile(demoFile)
-      setPreviewUrl(URL.createObjectURL(demoFile))
-      setSuccessMsg(`Loaded sample ${sampleType.toUpperCase()} test image (${fname}). Click "Upload & View Screening Result" below.`)
-    }, 'image/png')
-  }
-
-  const handleUploadImage = async () => {
-    if (!currentAnimal.aiSupported) {
-      setErrorMsg(`AI image detection is not available for ${currentAnimal.name}.`)
-      return null
-    }
-    if (!selectedFile) {
-      setErrorMsg('Please select an animal image before uploading.')
-      return null
-    }
-
-    setUploading(true)
-    setErrorMsg('')
-    setSuccessMsg('')
-
-    try {
-      const data = await uploadAnimalImage(selectedFile, currentAnimal.id)
-      setUploadedInfo(data.upload)
-      if (data.prediction) {
-        setPredictionResult(data.prediction)
-      }
-      const shapeInfo = data.upload.preprocessedShape
-        ? ` | Preprocessed tensor: [${data.upload.preprocessedShape.join(', ')}]`
-        : ''
+      updatePreview(demoFile)
       setSuccessMsg(
-        `Image uploaded to server (${data.upload.width}×${data.upload.height} ${data.upload.format}, ${data.upload.sizeKB} KB${shapeInfo}).`
+        `Loaded synthetic placeholder image (${fname}). This is NOT a real animal photo — use it only to test the upload and inference flow.`
       )
-      return data
-    } catch (err) {
-      const serverError = err?.response?.data?.error
-      if (serverError) {
-        setErrorMsg(serverError)
-      } else {
-        setErrorMsg('Could not upload image to backend. Ensure the Flask server is running on port 5000.')
-      }
-      return null
-    } finally {
-      setUploading(false)
-    }
+    }, 'image/png')
   }
 
   const handleProceedToResults = async (e) => {
@@ -178,8 +160,6 @@ function ImageDetection() {
       const data = await predictAnimalImage(selectedFile, currentAnimal.id)
       const uploadData = data.upload
       const pred = data.prediction
-      setUploadedInfo(uploadData)
-      setPredictionResult(pred)
 
       navigate('/results', {
         state: {
@@ -187,13 +167,17 @@ function ImageDetection() {
           animalId: currentAnimal.id,
           imageName: uploadData.originalName || selectedFile.name,
           imagePath: uploadData.imagePath,
-          previewUrl,
+          previewUrl: `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}${uploadData.imagePath}`,
           imagePrediction: pred.imagePrediction,
           predictedClass: pred.predictedClass,
           confidence: pred.confidence,
           isLowConfidence: pred.isLowConfidence,
+          isOutOfDistribution: pred.isOutOfDistribution,
           uncertaintyNotice: pred.uncertaintyNotice,
           classProbabilities: pred.classProbabilities,
+          modelValidated: pred.modelValidated,
+          trainingData: pred.trainingData,
+          modelStatusNote: pred.modelStatusNote,
           symptomAnalysis: pred.summary,
           preventionTips: pred.preventionTips,
           combinedDecision: data.combinedDecision,
@@ -204,7 +188,7 @@ function ImageDetection() {
       const serverError = err?.response?.data?.error
       setErrorMsg(
         serverError ||
-          'Could not run MobileNetV2 image prediction. Ensure the Flask server is running on port 5000.'
+          'Could not run MobileNetV2 image prediction. Ensure the Flask backend is running on port 5000 and model weights are trained.'
       )
     } finally {
       setUploading(false)
@@ -212,39 +196,47 @@ function ImageDetection() {
   }
 
   const handleProceedToCombinedSymptoms = async () => {
-    if (selectedFile && !predictionResult) {
-      const uploaded = await handleUploadImage()
-      if (!uploaded) {
-        return
-      }
-      navigate(`/symptoms?animal=${currentAnimal.id}`, {
-        state: {
-          uploadedInfo: uploaded.upload,
-          predictionResult: uploaded.prediction,
-          previewUrl,
-          imageName: uploaded.upload?.originalName || selectedFile.name
-        }
-      })
+    if (!selectedFile) {
+      navigate(`/symptoms?animal=${currentAnimal.id}`)
       return
     }
 
-    navigate(`/symptoms?animal=${currentAnimal.id}`, {
-      state: {
-        uploadedInfo,
-        predictionResult,
-        previewUrl,
-        imageName: uploadedInfo?.originalName || selectedFile?.name || null
-      }
-    })
+    setUploading(true)
+    setErrorMsg('')
+    try {
+      const data = await uploadAnimalImage(selectedFile, currentAnimal.id)
+      const uploadData = data.upload
+      navigate(`/symptoms?animal=${currentAnimal.id}`, {
+        state: {
+          uploadId: data.uploadId || uploadData.uploadId,
+          predictionResult: data.prediction,
+          imagePath: uploadData.imagePath,
+          previewUrl: `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}${uploadData.imagePath}`,
+          imageName: uploadData.originalName || selectedFile.name
+        }
+      })
+    } catch (err) {
+      const serverError = err?.response?.data?.error
+      setErrorMsg(
+        serverError ||
+          'Could not upload image for combined screening. Ensure the Flask backend is running and model weights are trained.'
+      )
+    } finally {
+      setUploading(false)
+    }
   }
 
   return (
     <div className="page-container">
       <div className="page-header">
-        <h1>Image-Based Disease Detection</h1>
+        <h1>Image-Based Screening (Demo Model)</h1>
         <p>
-          Upload a clear photograph of the animal (JPG, JPEG, or PNG, max 5 MB). Images are validated and prepared for 224 × 224 MobileNetV2 classification.
+          Upload a clear photograph (JPG, JPEG, or PNG, max 5 MB). Images are re-encoded to strip metadata and resized to 224 × 224 RGB.
         </p>
+      </div>
+
+      <div className="notice-warning" style={{ marginBottom: '1.25rem' }}>
+        <strong>Demo Model — Not Validated on Real Animals:</strong> Unless retrained on real labelled cattle photos, the image classifier is trained only on synthetic placeholder patterns. Image results are for pipeline demonstration only and must not be used for diagnosis. Use the Symptom Checker and consult a veterinarian.
       </div>
 
       <div className="form-card">
@@ -262,7 +254,7 @@ function ImageDetection() {
           >
             {ANIMALS.map((a) => (
               <option key={a.id} value={a.id}>
-                {a.emoji} {a.name} ({a.aiSupported ? 'AI Supported' : 'AI Unavailable'})
+                {a.emoji} {a.name} ({a.aiSupported ? 'Demo Image + Symptoms' : 'AI Unavailable'})
               </option>
             ))}
           </select>
@@ -271,7 +263,7 @@ function ImageDetection() {
         {!currentAnimal.aiSupported ? (
           <div className="notice-warning">
             <p>
-              <strong>AI Image Detection Unavailable for {currentAnimal.name}:</strong> Actual MobileNetV2 image classification is currently implemented only for <strong>Cow</strong> and <strong>Buffalo</strong>.
+              <strong>AI Image Detection Unavailable for {currentAnimal.name}:</strong> Image classification is only configured for <strong>Cow</strong> and <strong>Buffalo</strong>.
             </p>
             <div style={{ marginTop: '1rem' }}>
               <Link to={`/symptoms?animal=${currentAnimal.id}`} className="btn btn-secondary">
@@ -283,32 +275,32 @@ function ImageDetection() {
           <form onSubmit={handleProceedToResults}>
             <div className="sample-demo-box">
               <p>
-                <strong>Quick Demo Test Images:</strong> Don&apos;t have a livestock photo handy? Load a pre-configured 224×224 test sample:
+                <strong>Synthetic Placeholder Samples (Pipeline Test Only — Not Real Animal Photos):</strong>
               </p>
               <div className="sample-demo-actions">
                 <button
                   type="button"
                   className="btn btn-secondary"
                   style={{ padding: '0.4rem 0.75rem', fontSize: '0.85rem' }}
-                  onClick={() => handleLoadSampleDemoImage('healthy')}
+                  onClick={() => handleLoadSyntheticDemoImage('healthy')}
                 >
-                  Load Healthy Sample
+                  Synthetic Healthy Pattern
                 </button>
                 <button
                   type="button"
                   className="btn btn-secondary"
                   style={{ padding: '0.4rem 0.75rem', fontSize: '0.85rem' }}
-                  onClick={() => handleLoadSampleDemoImage('lsd')}
+                  onClick={() => handleLoadSyntheticDemoImage('lsd')}
                 >
-                  Load Lumpy Skin (LSD) Sample
+                  Synthetic LSD Pattern
                 </button>
                 <button
                   type="button"
                   className="btn btn-secondary"
                   style={{ padding: '0.4rem 0.75rem', fontSize: '0.85rem' }}
-                  onClick={() => handleLoadSampleDemoImage('fmd')}
+                  onClick={() => handleLoadSyntheticDemoImage('fmd')}
                 >
-                  Load Foot-and-Mouth (FMD) Sample
+                  Synthetic FMD Pattern
                 </button>
               </div>
             </div>
@@ -340,24 +332,16 @@ function ImageDetection() {
             )}
 
             <div className="form-actions">
+              <button type="submit" className="btn btn-primary" disabled={!selectedFile || uploading}>
+                {uploading ? 'Processing...' : '1. Upload & Run Demo Image Screening'}
+              </button>
               <button
                 type="button"
                 className="btn btn-secondary"
-                disabled={!selectedFile || uploading}
-                onClick={handleUploadImage}
-              >
-                {uploading ? 'Uploading...' : '1. Upload & Validate Image'}
-              </button>
-              <button type="submit" className="btn btn-primary" disabled={uploading}>
-                {uploading ? 'Processing...' : '2. Upload & View Screening Result'}
-              </button>
-              <button
-                type="button"
-                className="btn btn-outline"
                 disabled={uploading}
                 onClick={handleProceedToCombinedSymptoms}
               >
-                3. Also Select Symptoms (Combined Check)
+                {uploading ? 'Uploading...' : '2. Combine Image with Symptom Checker'}
               </button>
             </div>
           </form>

@@ -7,16 +7,16 @@ const ANIMAL_CATEGORIES = [
     name: 'Cow',
     emoji: '🐄',
     aiSupported: true,
-    statusText: 'AI Image + Symptom Detection Available',
-    description: 'Supports MobileNetV2 image screening (Healthy, Lumpy Skin Disease, Foot-and-Mouth Disease) and symptom analysis.'
+    statusText: 'Demo Image + Symptom Screening',
+    description: 'Supports MobileNetV2 demo image screening (not clinically validated) and rule-based symptom analysis.'
   },
   {
     id: 'buffalo',
     name: 'Buffalo',
     emoji: '🐃',
     aiSupported: true,
-    statusText: 'AI Image + Symptom Detection Available',
-    description: 'Supports MobileNetV2 image screening and rule-based symptom screening for common bovine conditions.'
+    statusText: 'Demo Image + Symptom Screening',
+    description: 'Supports MobileNetV2 demo image screening (not clinically validated) and rule-based symptom analysis.'
   },
   {
     id: 'goat',

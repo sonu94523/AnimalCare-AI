@@ -19,9 +19,9 @@ const SUPPORTED_DISEASES = [
       'Caused by the Lumpy Skin Disease virus (Capripoxvirus), primarily spread by blood-feeding insect vectors such as mosquitoes, biting flies, and ticks.',
     prevention: [
       'Isolate affected cattle immediately from the rest of the herd.',
+      'Report suspected cases to local veterinary authorities (notifiable livestock disease).',
       'Follow regional veterinary vaccination schedules against LSD.',
-      'Practice vector control (clean drainage, insect repellents, regular shed hygiene).',
-      'Disinfect premises and avoid sharing needles or equipment between animals.'
+      'Practice vector control (clean drainage, insect repellents, regular shed hygiene).'
     ]
   },
   {
@@ -38,10 +38,10 @@ const SUPPORTED_DISEASES = [
     causes:
       'Caused by an Aphthovirus (family Picornaviridae). Spreads rapidly through direct contact with infected animals, contaminated feed, footwear, or aerosols.',
     prevention: [
+      'Report suspected cases immediately to local veterinary authorities (WOAH-listed notifiable disease).',
       'Ensure routine FMD vaccination as recommended by local veterinary authorities.',
       'Strictly quarantine newly introduced or sick animals.',
-      'Sanitize footbaths, sheds, and feeding troughs regularly.',
-      'Restrict movement of livestock during suspected local outbreaks.'
+      'Sanitize footbaths, sheds, and feeding troughs regularly.'
     ]
   },
   {
@@ -110,26 +110,28 @@ function DiseaseInfo() {
       <div className="page-header">
         <h1>Supported Disease Information</h1>
         <p>
-          Reference guide based on general veterinary literature for conditions screened by AnimalCare AI. No medication dosages or prescriptions are provided.
+          Reference guide based on general veterinary literature for conditions covered by AnimalCare AI. No medication dosages or prescriptions are provided.
         </p>
       </div>
 
       {modelInfo && (
         <div className="form-card" style={{ marginBottom: '1.5rem' }}>
-          <h3 style={{ marginTop: 0 }}>MobileNetV2 Transfer Learning Model Summary</h3>
-          <p className="result-muted" style={{ marginBottom: '0.75rem' }}>
-            Backbone: <strong>{modelInfo.backbone}</strong> | Input Shape:{' '}
-            <strong>{(modelInfo.input_shape || [224, 224, 3]).join(' × ')} RGB</strong> | Supported AI Animals:{' '}
-            <strong>Cow, Buffalo</strong>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.6rem' }}>
+            <h3 style={{ margin: 0 }}>MobileNetV2 Image Model Status</h3>
+            <span className="status-pill pill-inactive">
+              Not Validated on Real Animals (Demo Only)
+            </span>
+          </div>
+          <p className="result-muted" style={{ marginBottom: '0.65rem' }}>
+            Backbone: <strong>{modelInfo.backbone}</strong> | Input:{' '}
+            <strong>{(modelInfo.inputShape || [224, 224, 3]).join(' × ')} RGB</strong> | Checkpoint:{' '}
+            <strong>{modelInfo.modelLoaded ? 'Loaded' : 'Not Trained Yet'}</strong> | Training Data:{' '}
+            <strong>{modelInfo.trainingData || 'synthetic / unverified'}</strong>
           </p>
-          {modelInfo.evaluation_metrics && (
-            <p style={{ margin: 0 }}>
-              <strong>Test Set Accuracy:</strong> {modelInfo.evaluation_metrics.accuracy_percent}% |{' '}
-              <strong>Macro F1-Score:</strong> {modelInfo.evaluation_metrics.macro_avg?.f1_score}% |{' '}
-              <strong>Low-Confidence Threshold:</strong>{' '}
-              {modelInfo.evaluation_metrics.confidence_summary?.low_confidence_threshold_percent || 60}%
-            </p>
-          )}
+          <div className="notice-warning" style={{ margin: 0 }}>
+            {modelInfo.statusNote ||
+              'This image model has not been validated on real animal photographs and must not be used as a clinical diagnosis.'}
+          </div>
         </div>
       )}
 

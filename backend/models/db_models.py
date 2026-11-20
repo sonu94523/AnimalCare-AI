@@ -1,6 +1,6 @@
 import json
 from datetime import datetime, timezone
-from database.db import db
+from backend.database.db import db
 
 
 class Animal(db.Model):
@@ -21,7 +21,7 @@ class Animal(db.Model):
             "emoji": self.emoji,
             "aiSupported": self.ai_supported,
             "badge": self.badge,
-            "details": self.details
+            "details": self.details,
         }
 
 
@@ -45,7 +45,39 @@ class Disease(db.Model):
             "aiSupported": self.ai_supported,
             "symptoms": json.loads(self.symptoms_json) if self.symptoms_json else [],
             "causes": self.causes,
-            "prevention": json.loads(self.prevention_json) if self.prevention_json else []
+            "prevention": json.loads(self.prevention_json) if self.prevention_json else [],
+        }
+
+
+class UploadRecord(db.Model):
+    """Server-side store of validated uploads and their server-computed model output.
+
+    Combined screening looks up predictions by `id` here rather than accepting
+    image predictions or paths from the client request body.
+    """
+
+    __tablename__ = "uploads"
+
+    id = db.Column(db.String(32), primary_key=True)
+    animal = db.Column(db.String(32), nullable=False)
+    filename = db.Column(db.String(256), nullable=False)
+    original_name = db.Column(db.String(256), nullable=False)
+    image_path = db.Column(db.String(256), nullable=False)
+    prediction_json = db.Column(db.Text, nullable=False)
+    created_at = db.Column(
+        db.DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    def to_dict(self):
+        return {
+            "uploadId": self.id,
+            "animal": self.animal,
+            "filename": self.filename,
+            "originalName": self.original_name,
+            "imagePath": self.image_path,
+            "prediction": json.loads(self.prediction_json),
         }
 
 
@@ -62,7 +94,7 @@ class Prediction(db.Model):
     created_at = db.Column(
         db.DateTime,
         default=lambda: datetime.now(timezone.utc),
-        nullable=False
+        nullable=False,
     )
 
     def to_dict(self):
@@ -74,5 +106,5 @@ class Prediction(db.Model):
             "imagePrediction": self.image_prediction or "N/A",
             "confidence": self.confidence,
             "symptomAnalysis": self.symptom_analysis or "N/A",
-            "date": self.created_at.strftime("%Y-%m-%d %H:%M")
+            "date": self.created_at.strftime("%Y-%m-%d %H:%M"),
         }

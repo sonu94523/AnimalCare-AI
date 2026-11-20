@@ -157,16 +157,14 @@ function SymptomChecker() {
     setSubmitting(true)
     try {
       const hasAttachedImage = Boolean(
-        attachedImageState.predictionResult && currentAnimal.aiSupported
+        attachedImageState.uploadId && currentAnimal.aiSupported
       )
 
       if (hasAttachedImage) {
         const combinedResp = await submitCombinedPrediction({
           animal: currentAnimal.id,
           symptoms: selectedSymptoms,
-          imagePath: attachedImageState.uploadedInfo?.imagePath || null,
-          imageFilename: attachedImageState.uploadedInfo?.filename || null,
-          imagePredictionData: attachedImageState.predictionResult
+          uploadId: attachedImageState.uploadId
         })
         const imgRes = combinedResp.imageResult || attachedImageState.predictionResult
         const symRes = combinedResp.symptomResult || {}
@@ -177,14 +175,18 @@ function SymptomChecker() {
             animal: currentAnimal.name,
             animalId: currentAnimal.id,
             imageName: attachedImageState.imageName,
-            imagePath: attachedImageState.uploadedInfo?.imagePath || null,
+            imagePath: attachedImageState.imagePath || null,
             previewUrl: attachedImageState.previewUrl || null,
             imagePrediction: imgRes.imagePrediction,
             predictedClass: imgRes.predictedClass,
             confidence: imgRes.confidence,
             isLowConfidence: imgRes.isLowConfidence,
+            isOutOfDistribution: imgRes.isOutOfDistribution,
             uncertaintyNotice: imgRes.uncertaintyNotice,
             classProbabilities: imgRes.classProbabilities,
+            modelValidated: imgRes.modelValidated,
+            trainingData: imgRes.trainingData,
+            modelStatusNote: imgRes.modelStatusNote,
             symptoms: symRes.selectedSymptoms || selectedSymptoms,
             symptomTopCondition: symRes.topCondition,
             symptomMatchScore: symRes.matchScorePercent,
@@ -221,25 +223,10 @@ function SymptomChecker() {
       })
     } catch (err) {
       const serverErr = err?.response?.data?.error
-      if (serverErr) {
-        setErrorMsg(serverErr)
-      } else {
-        // If backend is offline, still allow local demo navigation
-        navigate('/results', {
-          state: {
-            animal: currentAnimal.name,
-            animalId: currentAnimal.id,
-            imageName: null,
-            previewUrl: null,
-            imagePrediction: currentAnimal.aiSupported
-              ? 'No image uploaded (Symptom-only check)'
-              : `AI Image Detection unavailable for ${currentAnimal.name}`,
-            confidence: null,
-            symptoms: selectedSymptoms,
-            symptomAnalysis: `Recorded ${selectedSymptoms.length} symptom(s) for ${currentAnimal.name}.`
-          }
-        })
-      }
+      setErrorMsg(
+        serverErr ||
+          'Could not reach the Flask backend on port 5000. Start the backend server before submitting symptoms.'
+      )
     } finally {
       setSubmitting(false)
     }

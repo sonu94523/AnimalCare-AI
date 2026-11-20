@@ -1,14 +1,20 @@
 import axios from 'axios'
 
 export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000'
+const DEFAULT_ADMIN_TOKEN = import.meta.env.VITE_ADMIN_TOKEN || ''
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json'
   },
-  timeout: 10000
+  timeout: 15000
 })
+
+function adminHeaders(tokenOverride) {
+  const token = (tokenOverride ?? DEFAULT_ADMIN_TOKEN).trim()
+  return token ? { 'X-Admin-Token': token } : {}
+}
 
 export async function checkBackendHealth() {
   const response = await apiClient.get('/api/health')
@@ -45,24 +51,23 @@ export async function fetchHistory(animalFilter = '') {
   return response.data.records
 }
 
-export async function deleteHistoryRecord(recordId) {
-  const response = await apiClient.delete(`/api/history/${recordId}`)
+export async function deleteHistoryRecord(recordId, adminToken) {
+  const response = await apiClient.delete(`/api/history/${recordId}`, {
+    headers: adminHeaders(adminToken)
+  })
   return response.data
 }
 
-export async function clearAllHistory() {
-  const response = await apiClient.delete('/api/history')
+export async function clearAllHistory(adminToken) {
+  const response = await apiClient.delete('/api/history', {
+    headers: adminHeaders(adminToken)
+  })
   return response.data
 }
 
 export async function fetchModelInfo() {
   const response = await apiClient.get('/api/model/info')
   return response.data
-}
-
-export async function savePredictionRecord(payload) {
-  const response = await apiClient.post('/api/predictions', payload)
-  return response.data.record
 }
 
 export async function uploadAnimalImage(file, animalId) {
@@ -91,7 +96,11 @@ export async function predictAnimalImage(file, animalId) {
   return response.data
 }
 
-export async function submitCombinedPrediction(payload) {
+export async function submitCombinedPrediction({ animal, symptoms, uploadId }) {
+  const payload = { animal, symptoms }
+  if (uploadId) {
+    payload.uploadId = uploadId
+  }
   const response = await apiClient.post('/api/predict/combined', payload)
   return response.data
 }

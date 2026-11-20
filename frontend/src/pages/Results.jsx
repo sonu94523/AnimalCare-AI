@@ -3,26 +3,49 @@ import { useLocation, Link } from 'react-router-dom'
 
 function Results() {
   const location = useLocation()
-  const resultData = location.state || {
-    animal: 'Cow',
-    animalId: 'cow',
-    imageName: null,
-    previewUrl: null,
-    imagePrediction: 'No active detection run yet',
-    confidence: null,
-    symptoms: ['Fever (High body temperature)', 'Skin lesions / sores / scabs'],
-    symptomAnalysis: null
+  const resultData = location.state
+
+  if (!resultData) {
+    return (
+      <div className="page-container">
+        <div className="page-header">
+          <h1>Screening Result</h1>
+          <p>No active screening session found.</p>
+        </div>
+        <div className="form-card empty-history">
+          <h3>No Screening Run Yet</h3>
+          <p>
+            Select an animal category and run a symptom check or demo image upload to view results here.
+          </p>
+          <div className="form-actions" style={{ justifyContent: 'center' }}>
+            <Link to="/select-animal" className="btn btn-primary">
+              Start a Screening
+            </Link>
+            <Link to="/history" className="btn btn-outline">
+              View Saved History
+            </Link>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   const comb = resultData.combinedDecision
   const hasSymptoms = Array.isArray(resultData.symptoms) && resultData.symptoms.length > 0
+  const hasImage = Boolean(resultData.previewUrl || resultData.imagePath)
   const hasProbs = Array.isArray(resultData.classProbabilities) && resultData.classProbabilities.length > 0
   const hasMatchedConds =
     Array.isArray(resultData.matchedConditions) && resultData.matchedConditions.length > 0
 
-  // Determine the single primary headline, subtitle, score, and warning state
+  const showUnvalidatedBanner =
+    hasImage && (resultData.modelValidated === false || comb?.modelValidated === false)
+
   const isWarning = Boolean(
-    comb?.hasConflict || comb?.isUncertain || resultData.isLowConfidence
+    comb?.hasConflict ||
+      comb?.isUncertain ||
+      resultData.isLowConfidence ||
+      resultData.isOutOfDistribution ||
+      showUnvalidatedBanner
   )
 
   const primaryHeadline =
@@ -37,6 +60,13 @@ function Results() {
     resultData.symptomMatchScore ??
     null
 
+  const scoreCaption =
+    comb?.mode === 'image_only' || (hasImage && !hasSymptoms)
+      ? 'Image Confidence'
+      : comb?.mode === 'symptom_only' || (hasSymptoms && !hasImage)
+      ? 'Rule Match'
+      : 'Combined Score'
+
   const primarySubtitle =
     resultData.uncertaintyNotice ||
     comb?.explanation ||
@@ -49,15 +79,23 @@ function Results() {
       : [
           'Isolate any animal showing fever, skin nodules, or mouth lesions from the healthy herd.',
           'Maintain clean water, dry bedding, and disinfected feeding equipment.',
-          'Control biting insects (flies, mosquitoes, ticks) around cattle sheds.'
+          'Consult a qualified veterinarian and report suspected notifiable diseases to local authorities.'
         ]
 
   return (
     <div className="page-container">
       <div className="page-header">
         <h1>Screening Result</h1>
-        <p>Clear summary of your image and symptom check.</p>
+        <p>Clear summary of your screening check.</p>
       </div>
+
+      {showUnvalidatedBanner && (
+        <div className="notice-warning" style={{ marginBottom: '1rem' }}>
+          <strong>Unvalidated Demo Model — Non-Diagnostic:</strong>{' '}
+          {resultData.modelStatusNote ||
+            'This image model has not been validated on real animals (trained on synthetic placeholder data). Do not treat the image output as a medical diagnosis.'}
+        </div>
+      )}
 
       {/* Top Hero Summary Card */}
       <div className={`result-hero-card ${isWarning ? 'result-hero-warn' : ''}`}>
@@ -72,7 +110,7 @@ function Results() {
         {primaryScore !== null && primaryScore !== undefined && (
           <div className="result-score-badge">
             <span className="result-score-number">{primaryScore}%</span>
-            <span className="result-score-caption">Match Score</span>
+            <span className="result-score-caption">{scoreCaption}</span>
           </div>
         )}
       </div>
@@ -91,9 +129,7 @@ function Results() {
             <div className="result-kpi-box">
               <span className="result-kpi-label">Image Check</span>
               <span className="result-kpi-value">
-                {resultData.previewUrl || resultData.confidence !== null
-                  ? resultData.imagePrediction
-                  : 'Not Uploaded'}
+                {hasImage ? resultData.imagePrediction : 'Not Uploaded'}
               </span>
             </div>
             <div className="result-kpi-box">
@@ -113,7 +149,7 @@ function Results() {
 
           {hasProbs && (
             <div className="result-subsection" style={{ marginTop: '0.5rem' }}>
-              <h4>Image Model Probabilities</h4>
+              <h4>Demo Image Model Probabilities (Non-Diagnostic)</h4>
               <div className="prob-list">
                 {resultData.classProbabilities.map((item) => (
                   <div key={item.classId} className="prob-item">
@@ -202,7 +238,7 @@ function Results() {
           </div>
 
           <div className="vet-advisory-box">
-            <strong>Veterinary Note:</strong> This tool provides preliminary academic screening only. Please consult a qualified veterinarian before starting treatment.
+            <strong>Veterinary Note:</strong> This tool provides preliminary academic screening only. Suspected FMD or LSD should be reported promptly to local veterinary authorities. Always consult a qualified veterinarian before starting treatment.
           </div>
         </div>
       </div>

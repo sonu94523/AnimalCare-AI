@@ -1,243 +1,440 @@
 """
-Automated Unit & Integration Test Suite for AnimalCare AI.
+Isolated pytest test suite for AnimalCare AI.
 
-Covers:
-1. Flask REST API endpoints (/api/health, /api/animals, /api/diseases, /api/symptoms, /api/model/info)
-2. MobileNetV2 image preprocessing (224x224 RGB, [-1, 1] normalization) and inference
-3. Image upload validation (supported animals Cow/Buffalo vs. unsupported animals, file format checks)
-4. Rule-based symptom analysis engine (LSD, FMD, and non-specific symptom handling)
-5. Combined image + symptom decision engine (agreement, conflict/disagreement, and uncertainty)
-6. SQLite prediction history persistence, animal filtering, and record deletion
+Uses in-memory SQLite (`sqlite:///:memory:`) and `tmp_path` directories for
+uploads, datasets, and model checkpoints so running tests never modifies
+`backend/database/`, `backend/uploads/`, `ml/dataset/`, or `ml/saved_models/`.
 """
 
 import io
-import json
 import os
-import sys
-import unittest
+import numpy as np
+import pytest
 from PIL import Image
-
-TESTS_DIR = os.path.dirname(os.path.abspath(__file__))
-BACKEND_DIR = os.path.dirname(TESTS_DIR)
-PROJECT_ROOT = os.path.dirname(BACKEND_DIR)
-
-for path in (PROJECT_ROOT, BACKEND_DIR):
-    if path not in sys.path:
-        sys.path.insert(0, path)
-
-_BASE_SITE_PACKAGES = os.path.join(getattr(sys, "base_prefix", sys.prefix), "Lib", "site-packages")
-if os.path.isdir(_BASE_SITE_PACKAGES) and _BASE_SITE_PACKAGES not in sys.path:
-    sys.path.append(_BASE_SITE_PACKAGES)
 
 from backend.app import create_app
 from backend.services.decision_service import evaluate_combined_decision
+from backend.services.prediction_service import clear_model_cache
 from backend.services.symptom_service import analyze_symptoms, resolve_symptom_ids
-from ml.preprocessing import IMAGE_SHAPE, preprocess_image
+from ml.evaluate import compute_classification_metrics, compute_confusion_matrix, evaluate_saved_model
+from ml.preprocessing import CLASS_NAMES, IMAGE_SHAPE, preprocess_image, seed_sample_dataset
+from ml.train import train_and_save_model
 
 
-def _create_test_jpeg_bytes(color=(160, 110, 85), size=(300, 240)) -> bytes:
+def _make_textured_jpeg(base_rgb=(165, 110, 80), size=(300, 240), with_exif=False) -> bytes:
+    """Create a valid non-uniform JPEG image (high enough std to pass the blank-image check)."""
+    rng = np.random.default_rng(7)
+    arr = np.zeros((size[1], size[0], 3), dtype=np.float32)
+    for c in range(3):
+        arr[:, :, c] = np.clip(base_rgb[c] + rng.normal(0, 25, size=(size[1], size[0])), 0, 255)
+    img = Image.fromarray(arr.astype(np.uint8), mode="RGB")
     buf = io.BytesIO()
-    img = Image.new("RGB", size, color)
-    img.save(buf, format="JPEG", quality=90)
+    if with_exif:
+        exif = img.getexif()
+        exif[0x010E] = "Sensitive-GPS-Camera-Note"
+        img.save(buf, format="JPEG", quality=90, exif=exif)
+    else:
+        img.save(buf, format="JPEG", quality=90)
     return buf.getvalue()
 
 
-class AnimalCareAITestSuite(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.app = create_app()
-        cls.app.config["TESTING"] = True
-        cls.client = cls.app.test_client()
+def _make_solid_jpeg(color=(0, 0, 0), size=(224, 224)) -> bytes:
+    buf = io.BytesIO()
+    Image.new("RGB", size, color).save(buf, format="JPEG", quality=90)
+    return buf.getvalue()
 
-    def test_01_health_and_animals_endpoints(self):
-        resp = self.client.get("/api/health")
-        self.assertEqual(resp.status_code, 200)
-        data = resp.get_json()
-        self.assertEqual(data["status"], "ok")
-        self.assertEqual(sorted(data["aiSupportedAnimals"]), ["buffalo", "cow"])
 
-        animals_resp = self.client.get("/api/animals")
-        self.assertEqual(animals_resp.status_code, 200)
-        animals = animals_resp.get_json()["animals"]
-        self.assertEqual(len(animals), 6)
-        supported_ids = {a["id"] for a in animals if a["aiSupported"]}
-        unsupported_ids = {a["id"] for a in animals if not a["aiSupported"]}
-        self.assertEqual(supported_ids, {"cow", "buffalo"})
-        self.assertEqual(unsupported_ids, {"goat", "sheep", "dog", "cat"})
+@pytest.fixture()
+def isolated_env(tmp_path):
+    """Build an isolated Flask app with no model weights initially."""
+    clear_model_cache()
+    upload_dir = tmp_path / "uploads"
+    models_dir = tmp_path / "saved_models"
+    dataset_dir = tmp_path / "dataset"
+    upload_dir.mkdir()
+    models_dir.mkdir()
+    dataset_dir.mkdir()
 
-    def test_02_diseases_and_model_info_endpoints(self):
-        diseases_resp = self.client.get("/api/diseases")
-        self.assertEqual(diseases_resp.status_code, 200)
-        diseases = diseases_resp.get_json()["diseases"]
-        self.assertGreaterEqual(len(diseases), 3)
+    app = create_app(
+        config={
+            "TESTING": True,
+            "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
+            "UPLOAD_FOLDER": str(upload_dir),
+            "MODELS_DIR": str(models_dir),
+            "DATASET_DIR": str(dataset_dir),
+            "ADMIN_TOKEN": "test-secret-token",
+            "CORS_ORIGINS": ["http://localhost:5173"],
+        }
+    )
+    return {
+        "app": app,
+        "client": app.test_client(),
+        "upload_dir": upload_dir,
+        "models_dir": models_dir,
+        "dataset_dir": dataset_dir,
+        "admin_headers": {"X-Admin-Token": "test-secret-token"},
+    }
 
-        model_resp = self.client.get("/api/model/info")
-        self.assertEqual(model_resp.status_code, 200)
-        model_info = model_resp.get_json()
-        self.assertEqual(model_info["backbone"], "MobileNetV2")
-        self.assertEqual(model_info["input_shape"], [224, 224, 3])
-        self.assertEqual(model_info["num_classes"], 3)
 
-    def test_03_image_preprocessing_pipeline(self):
-        raw_bytes = _create_test_jpeg_bytes()
-        tensor = preprocess_image(raw_bytes, expand_dims=True)
-        self.assertEqual(tensor.shape, (1, *IMAGE_SHAPE))
-        self.assertGreaterEqual(float(tensor.min()), -1.001)
-        self.assertLessEqual(float(tensor.max()), 1.001)
+@pytest.fixture(scope="module")
+def trained_artifacts(tmp_path_factory):
+    """Train a small fast checkpoint once per test run in a temp directory (offline, no ImageNet download)."""
+    base = tmp_path_factory.mktemp("trained_model")
+    dataset_dir = base / "dataset"
+    models_dir = base / "saved_models"
+    dataset_dir.mkdir()
+    models_dir.mkdir()
 
-    def test_04_image_upload_and_prediction_validation(self):
-        # Valid Cow image prediction
-        jpeg_bytes = _create_test_jpeg_bytes()
-        resp = self.client.post(
+    seed_sample_dataset(dataset_root=str(dataset_dir), raw_samples_per_class=6, seed=123)
+    train_result = train_and_save_model(
+        dataset_root=str(dataset_dir),
+        saved_models_dir=str(models_dir),
+        epochs=4,
+        batch_size=6,
+        learning_rate=3e-3,
+        unfreeze_top=1,
+        pretrained=False,
+        augment=False,
+        seed=123,
+    )
+    clear_model_cache()
+    return {
+        "dataset_dir": dataset_dir,
+        "models_dir": models_dir,
+        "train_result": train_result,
+    }
+
+
+@pytest.fixture()
+def trained_env(tmp_path, trained_artifacts):
+    """Isolated Flask app & fresh in-memory DB pointing at the module-scoped trained checkpoint."""
+    upload_dir = tmp_path / "uploads"
+    upload_dir.mkdir()
+    app = create_app(
+        config={
+            "TESTING": True,
+            "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
+            "UPLOAD_FOLDER": str(upload_dir),
+            "MODELS_DIR": str(trained_artifacts["models_dir"]),
+            "DATASET_DIR": str(trained_artifacts["dataset_dir"]),
+            "ADMIN_TOKEN": "test-secret-token",
+            "CORS_ORIGINS": ["http://localhost:5173"],
+        }
+    )
+    return {
+        "app": app,
+        "client": app.test_client(),
+        "upload_dir": upload_dir,
+        "models_dir": trained_artifacts["models_dir"],
+        "dataset_dir": trained_artifacts["dataset_dir"],
+        "admin_headers": {"X-Admin-Token": "test-secret-token"},
+        "train_result": trained_artifacts["train_result"],
+    }
+
+
+def test_health_animals_diseases_and_model_info(isolated_env):
+    client = isolated_env["client"]
+
+    health = client.get("/api/health").get_json()
+    assert health["status"] == "ok"
+    assert sorted(health["aiSupportedAnimals"]) == ["buffalo", "cow"]
+    assert health["modelLoaded"] is False
+    assert health["modelValidated"] is False
+
+    animals = client.get("/api/animals").get_json()["animals"]
+    assert len(animals) == 6
+    assert {a["id"] for a in animals if a["aiSupported"]} == {"cow", "buffalo"}
+    assert {a["id"] for a in animals if not a["aiSupported"]} == {"goat", "sheep", "dog", "cat"}
+
+    diseases = client.get("/api/diseases").get_json()["diseases"]
+    assert len(diseases) >= 3
+
+    info = client.get("/api/model/info").get_json()
+    assert info["backbone"] == "MobileNetV2"
+    assert info["inputShape"] == [224, 224, 3]
+    assert info["validated"] is False
+    assert info["modelLoaded"] is False
+    assert "not been validated" in info["statusNote"].lower()
+
+
+def test_fail_closed_503_when_weights_missing(isolated_env):
+    """Server must return 503 and NEVER train inside an HTTP request when weights are missing."""
+    client = isolated_env["client"]
+    jpeg = _make_textured_jpeg()
+
+    resp = client.post(
+        "/api/predict/image",
+        data={"animal": "cow", "image": (io.BytesIO(jpeg), "cow.jpg")},
+        content_type="multipart/form-data",
+    )
+    assert resp.status_code == 503
+    assert "not installed" in resp.get_json()["error"].lower()
+    # Confirm no checkpoint was secretly created and the uploaded file was cleaned up
+    assert list(isolated_env["models_dir"].iterdir()) == []
+    assert list(isolated_env["upload_dir"].iterdir()) == []
+
+
+def test_preprocessing_consistent_between_bytes_and_path(tmp_path):
+    jpeg = _make_textured_jpeg()
+    img_path = tmp_path / "sample.jpg"
+    img_path.write_bytes(jpeg)
+
+    from_bytes = preprocess_image(jpeg, normalization="imagenet", expand_dims=True)
+    from_path = preprocess_image(str(img_path), normalization="imagenet", expand_dims=True)
+
+    assert from_bytes.shape == (1, *IMAGE_SHAPE)
+    assert np.allclose(from_bytes, from_path, atol=1e-5)
+
+
+def test_training_lowers_loss_and_evaluate_metrics_math(trained_env):
+    history = trained_env["train_result"]["report"]["history"]
+    assert len(history) == 4
+    assert history[-1]["trainLoss"] < history[0]["trainLoss"]
+    assert trained_env["train_result"]["report"]["trainingData"] == "synthetic"
+    assert trained_env["train_result"]["report"]["validated"] is False
+
+    # Verify exact hand-computed metrics in evaluate.py
+    y_true = np.array([0, 0, 1, 1, 2, 2])
+    y_pred = np.array([0, 1, 1, 1, 2, 0])
+    cm = compute_confusion_matrix(y_true, y_pred, num_classes=3)
+    assert cm == [[1, 1, 0], [0, 2, 0], [1, 0, 1]]
+
+    metrics = compute_classification_metrics(y_true, y_pred, CLASS_NAMES)
+    assert metrics["totalSamples"] == 6
+    assert metrics["accuracyPercent"] == pytest.approx(66.67, abs=0.01)
+    assert metrics["perClass"]["healthy"]["precision"] == 50.0
+    assert metrics["perClass"]["healthy"]["recall"] == 50.0
+    assert metrics["perClass"]["lumpy_skin_disease"]["recall"] == 100.0
+    assert metrics["perClass"]["foot_and_mouth_disease"]["precision"] == 100.0
+
+    # End-to-end evaluate_saved_model on tmp_path
+    eval_out = evaluate_saved_model(
+        dataset_root=str(trained_env["dataset_dir"]),
+        saved_models_dir=str(trained_env["models_dir"]),
+        split_name="test",
+    )
+    assert eval_out["report"]["evaluationData"] == "synthetic"
+    assert eval_out["report"]["validated"] is False
+
+
+def test_solid_black_and_white_images_are_never_confident_disease(trained_env):
+    """A solid-black or solid-white image must be flagged unsuitable/uncertain, not FMD/LSD."""
+    client = trained_env["client"]
+    for color, name in [((0, 0, 0), "black.jpg"), ((255, 255, 255), "white.jpg")]:
+        resp = client.post(
             "/api/predict/image",
-            data={
-                "animal": "cow",
-                "image": (io.BytesIO(jpeg_bytes), "test_cow.jpg"),
-            },
+            data={"animal": "cow", "image": (io.BytesIO(_make_solid_jpeg(color)), name)},
             content_type="multipart/form-data",
         )
-        self.assertEqual(resp.status_code, 200)
-        payload = resp.get_json()
-        self.assertIn("prediction", payload)
-        self.assertEqual(payload["prediction"]["inputShape"], [1, 224, 224, 3])
-        self.assertEqual(len(payload["prediction"]["classProbabilities"]), 3)
+        assert resp.status_code == 200
+        pred = resp.get_json()["prediction"]
+        assert pred["isOutOfDistribution"] is True
+        assert pred["isLowConfidence"] is True
+        assert pred["confidence"] == 0.0
+        assert pred["predictedClass"] == "uncertain"
+        assert all("quarantine" not in tip.lower() for tip in pred["preventionTips"])
 
-        # Unsupported animal for AI image detection (Goat) must return 400
-        unsupported_resp = self.client.post(
-            "/api/predict/image",
-            data={
-                "animal": "goat",
-                "image": (io.BytesIO(jpeg_bytes), "test_goat.jpg"),
+
+def test_upload_hardening_exif_stripped_nosniff_and_rejections(trained_env):
+    client = trained_env["client"]
+
+    # 1. Valid upload with EXIF metadata -> EXIF must be stripped on disk & nosniff header sent
+    exif_jpeg = _make_textured_jpeg(with_exif=True)
+    resp = client.post(
+        "/api/predict/image",
+        data={"animal": "cow", "image": (io.BytesIO(exif_jpeg), "cow_exif.jpg")},
+        content_type="multipart/form-data",
+    )
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["uploadId"]
+    assert body["prediction"]["modelValidated"] is False
+
+    saved_filename = body["upload"]["filename"]
+    saved_path = trained_env["upload_dir"] / saved_filename
+    assert saved_path.is_file()
+    with Image.open(saved_path) as saved_img:
+        assert len(saved_img.getexif()) == 0
+
+    served = client.get(f"/uploads/{saved_filename}")
+    assert served.status_code == 200
+    assert served.headers.get("X-Content-Type-Options") == "nosniff"
+    served.close()
+
+    # 2. Unsupported animal -> 400
+    bad_animal = client.post(
+        "/api/predict/image",
+        data={"animal": "goat", "image": (io.BytesIO(exif_jpeg), "goat.jpg")},
+        content_type="multipart/form-data",
+    )
+    assert bad_animal.status_code == 400
+
+    # 3. Invalid extension -> 400
+    bad_ext = client.post(
+        "/api/predict/image",
+        data={"animal": "cow", "image": (io.BytesIO(b"plain text"), "notes.txt")},
+        content_type="multipart/form-data",
+    )
+    assert bad_ext.status_code == 400
+
+    # 4. Corrupt bytes with .jpg extension -> 400
+    corrupt = client.post(
+        "/api/predict/image",
+        data={"animal": "cow", "image": (io.BytesIO(b"\xff\xd8\xffcorrupt"), "bad.jpg")},
+        content_type="multipart/form-data",
+    )
+    assert corrupt.status_code == 400
+
+    # 5. Oversized payload (> 5 MB) -> 413
+    oversized = client.post(
+        "/api/predict/image",
+        data={"animal": "cow", "image": (io.BytesIO(b"0" * (5 * 1024 * 1024 + 1024)), "huge.jpg")},
+        content_type="multipart/form-data",
+    )
+    assert oversized.status_code == 413
+
+
+def test_combined_rejects_client_forged_predictions_and_accepts_upload_id(trained_env):
+    client = trained_env["client"]
+
+    # Forged imagePredictionData must be rejected with 400
+    forged = client.post(
+        "/api/predict/combined",
+        json={
+            "animal": "cow",
+            "imagePredictionData": {
+                "predictedClass": "foot_and_mouth_disease",
+                "confidence": 99.9,
+                "imagePrediction": "FORGED",
             },
-            content_type="multipart/form-data",
-        )
-        self.assertEqual(unsupported_resp.status_code, 400)
+            "symptoms": ["fever"],
+        },
+    )
+    assert forged.status_code == 400
 
-        # Invalid file format (.txt) must return 400
-        invalid_file_resp = self.client.post(
-            "/api/predict/image",
-            data={
-                "animal": "cow",
-                "image": (io.BytesIO(b"not an image"), "notes.txt"),
-            },
-            content_type="multipart/form-data",
-        )
-        self.assertEqual(invalid_file_resp.status_code, 400)
+    # Arbitrary external imagePath must be rejected with 400
+    evil_path = client.post(
+        "/api/predict/combined",
+        json={
+            "animal": "cow",
+            "imagePath": "//evil.example/x.png",
+            "symptoms": ["fever"],
+        },
+    )
+    assert evil_path.status_code == 400
 
-    def test_05_symptom_rule_engine_and_endpoint(self):
-        # LSD symptom match for Cow
-        lsd_resp = self.client.post(
-            "/api/symptoms/submit",
-            json={
-                "animal": "cow",
-                "symptoms": ["skin_nodules", "fever", "swelling", "reduced_milk"],
-            },
-        )
-        self.assertEqual(lsd_resp.status_code, 200)
-        lsd_data = lsd_resp.get_json()
-        self.assertEqual(lsd_data["topConditionId"], "lumpy_skin_disease")
-        self.assertGreaterEqual(lsd_data["matchScorePercent"], 60.0)
+    # Legitimate server-side upload -> uploadId lookup succeeds
+    up_resp = client.post(
+        "/api/upload",
+        data={"animal": "cow", "image": (io.BytesIO(_make_textured_jpeg()), "cow.jpg")},
+        content_type="multipart/form-data",
+    )
+    assert up_resp.status_code == 201
+    upload_id = up_resp.get_json()["uploadId"]
 
-        # FMD symptom match for Buffalo
-        fmd_resp = self.client.post(
-            "/api/symptoms/submit",
-            json={
-                "animal": "buffalo",
-                "symptoms": ["mouth_hoof_blisters", "excessive_salivation", "difficulty_walking"],
-            },
-        )
-        self.assertEqual(fmd_resp.status_code, 200)
-        fmd_data = fmd_resp.get_json()
-        self.assertEqual(fmd_data["topConditionId"], "foot_and_mouth_disease")
-        self.assertGreaterEqual(fmd_data["matchScorePercent"], 60.0)
-
-        # Non-specific single symptom on Dog
-        dog_ids, _, err = resolve_symptom_ids("dog", ["fever"])
-        self.assertEqual(err, "")
-        dog_analysis = analyze_symptoms("dog", dog_ids)
-        self.assertEqual(dog_analysis["topConditionId"], "inconclusive")
-
-        # Inapplicable symptom for Dog ('skin_nodules') must return 400
-        bad_sym_resp = self.client.post(
-            "/api/symptoms/submit",
-            json={
-                "animal": "dog",
-                "symptoms": ["skin_nodules"],
-            },
-        )
-        self.assertEqual(bad_sym_resp.status_code, 400)
-
-    def test_06_combined_decision_agreement_and_conflict(self):
-        img_lsd = {
-            "predictedClass": "lumpy_skin_disease",
-            "predictedLabel": "Lumpy Skin Disease (LSD)",
-            "confidence": 84.0,
-            "isLowConfidence": False,
-            "preventionTips": ["Isolate affected cattle."],
-        }
-        sym_lsd = {
-            "topConditionId": "lumpy_skin_disease",
-            "topCondition": "Lumpy Skin Disease (LSD)",
-            "matchScorePercent": 80.0,
-            "preventionTips": ["Practice vector control."],
-        }
-        sym_fmd = {
-            "topConditionId": "foot_and_mouth_disease",
-            "topCondition": "Foot-and-Mouth Disease (FMD)",
-            "matchScorePercent": 90.0,
-            "preventionTips": ["Quarantine livestock."],
-        }
-
-        agree_decision = evaluate_combined_decision("cow", img_lsd, sym_lsd)
-        self.assertFalse(agree_decision["hasConflict"])
-        self.assertFalse(agree_decision["isUncertain"])
-
-        conflict_decision = evaluate_combined_decision("cow", img_lsd, sym_fmd)
-        self.assertTrue(conflict_decision["hasConflict"])
-        self.assertTrue(conflict_decision["isUncertain"])
-
-        # Test combined endpoint via HTTP
-        comb_resp = self.client.post(
-            "/api/predict/combined",
-            json={
-                "animal": "cow",
-                "imagePredictionData": img_lsd,
-                "symptoms": ["mouth_hoof_blisters", "excessive_salivation", "fever"],
-            },
-        )
-        self.assertEqual(comb_resp.status_code, 200)
-        comb_data = comb_resp.get_json()
-        self.assertTrue(comb_data["combinedDecision"]["hasConflict"])
-
-    def test_07_history_filtering_and_deletion(self):
-        # Create a prediction record
-        create_resp = self.client.post(
-            "/api/predictions",
-            json={
-                "animal": "Buffalo",
-                "imagePrediction": "Foot-and-Mouth Disease (FMD)",
-                "confidence": 88.5,
-                "symptoms": ["Fever (High body temperature)"],
-                "symptomAnalysis": "High symptom match for FMD",
-            },
-        )
-        self.assertEqual(create_resp.status_code, 201)
-        rec_id = create_resp.get_json()["record"]["id"]
-
-        # Filter history by animal=buffalo
-        hist_resp = self.client.get("/api/history?animal=buffalo")
-        self.assertEqual(hist_resp.status_code, 200)
-        records = hist_resp.get_json()["records"]
-        self.assertTrue(any(r["id"] == rec_id for r in records))
-
-        # Delete the single record
-        del_resp = self.client.delete(f"/api/history/{rec_id}")
-        self.assertEqual(del_resp.status_code, 200)
-
-        # Verify record is gone
-        get_deleted = self.client.get(f"/api/history/{rec_id}")
-        self.assertEqual(get_deleted.status_code, 404)
+    comb_resp = client.post(
+        "/api/predict/combined",
+        json={
+            "animal": "cow",
+            "uploadId": upload_id,
+            "symptoms": ["mouth_hoof_blisters", "excessive_salivation", "fever"],
+        },
+    )
+    assert comb_resp.status_code == 200
+    comb_body = comb_resp.get_json()
+    assert comb_body["imageResult"] is not None
+    assert comb_body["symptomResult"]["topConditionId"] == "foot_and_mouth_disease"
+    assert comb_body["record"]["imagePath"].startswith("/uploads/")
 
 
-if __name__ == "__main__":
-    unittest.main(verbosity=2)
+def test_malformed_and_non_dict_json_returns_400(isolated_env):
+    client = isolated_env["client"]
+
+    for endpoint in ("/api/symptoms/submit", "/api/predict/combined"):
+        bad_syntax = client.post(endpoint, data="{bad json", content_type="application/json")
+        assert bad_syntax.status_code == 400
+
+        non_dict = client.post(endpoint, json=["not", "a", "dict"])
+        assert non_dict.status_code == 400
+
+
+def test_symptom_rules_and_decision_logic(isolated_env):
+    client = isolated_env["client"]
+
+    # LSD match for Cow
+    lsd = client.post(
+        "/api/symptoms/submit",
+        json={"animal": "cow", "symptoms": ["skin_nodules", "fever", "swelling", "reduced_milk"]},
+    )
+    assert lsd.status_code == 200
+    assert lsd.get_json()["topConditionId"] == "lumpy_skin_disease"
+    assert lsd.get_json()["matchScorePercent"] >= 60.0
+
+    # FMD match for Buffalo
+    fmd = client.post(
+        "/api/symptoms/submit",
+        json={"animal": "buffalo", "symptoms": ["mouth_hoof_blisters", "excessive_salivation", "difficulty_walking"]},
+    )
+    assert fmd.status_code == 200
+    assert fmd.get_json()["topConditionId"] == "foot_and_mouth_disease"
+
+    # Single non-specific symptom -> inconclusive
+    dog_ids, _, err = resolve_symptom_ids("dog", ["fever"])
+    assert err == ""
+    assert analyze_symptoms("dog", dog_ids)["topConditionId"] == "inconclusive"
+
+    # Inapplicable symptom for dog -> 400
+    bad_sym = client.post("/api/symptoms/submit", json={"animal": "dog", "symptoms": ["skin_nodules"]})
+    assert bad_sym.status_code == 400
+
+    # Decision service agreement vs conflict
+    img_lsd = {"predictedClass": "lumpy_skin_disease", "predictedLabel": "Lumpy Skin Disease (LSD)", "confidence": 84.0, "isLowConfidence": False, "modelValidated": False}
+    sym_lsd = {"topConditionId": "lumpy_skin_disease", "topCondition": "Lumpy Skin Disease (LSD)", "matchScorePercent": 80.0}
+    sym_fmd = {"topConditionId": "foot_and_mouth_disease", "topCondition": "Foot-and-Mouth Disease (FMD)", "matchScorePercent": 90.0}
+
+    agree = evaluate_combined_decision("cow", img_lsd, sym_lsd)
+    assert agree["hasConflict"] is False
+    assert "Agreement" in agree["agreementStatus"]
+
+    conflict = evaluate_combined_decision("cow", img_lsd, sym_fmd)
+    assert conflict["hasConflict"] is True
+    assert conflict["isUncertain"] is True
+
+
+def test_history_admin_auth_and_file_cleanup_on_delete(trained_env):
+    client = trained_env["client"]
+    headers = trained_env["admin_headers"]
+
+    # Create a prediction with an uploaded image
+    pred_resp = client.post(
+        "/api/predict/image",
+        data={"animal": "buffalo", "image": (io.BytesIO(_make_textured_jpeg()), "buf.jpg")},
+        content_type="multipart/form-data",
+    )
+    assert pred_resp.status_code == 200
+    rec_id = pred_resp.get_json()["record"]["id"]
+    img_file = trained_env["upload_dir"] / pred_resp.get_json()["upload"]["filename"]
+    assert img_file.is_file()
+
+    # Unauthenticated DELETE must fail with 401
+    assert client.delete(f"/api/history/{rec_id}").status_code == 401
+    assert client.delete("/api/history").status_code == 401
+
+    # Wrong token must fail with 401
+    assert client.delete(f"/api/history/{rec_id}", headers={"X-Admin-Token": "wrong"}).status_code == 401
+
+    # Filter history by animal
+    filtered = client.get("/api/history?animal=buffalo").get_json()["records"]
+    assert any(r["id"] == rec_id for r in filtered)
+
+    # Authenticated DELETE removes both the DB row and the uploaded file
+    del_resp = client.delete(f"/api/history/{rec_id}", headers=headers)
+    assert del_resp.status_code == 200
+    assert not img_file.exists()
+    assert client.get(f"/api/history/{rec_id}").status_code == 404
+
+    # Bulk clear removes remaining rows & files
+    client.post("/api/symptoms/submit", json={"animal": "cow", "symptoms": ["fever"]})
+    clear_resp = client.delete("/api/history", headers=headers)
+    assert clear_resp.status_code == 200
+    assert client.get("/api/history").get_json()["totalCount"] == 0

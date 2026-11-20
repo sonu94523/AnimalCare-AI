@@ -3,9 +3,12 @@ Combined Image + Symptom Decision Engine & Uncertainty/Conflict Handler.
 
 Synthesizes MobileNetV2 image classification output and rule-based clinical
 symptom analysis into a transparent preliminary assessment:
+  - Handles out-of-distribution / unsuitable images honestly
   - Highlights agreement when visual and symptomatic evidence align
   - Explicitly flags conflict/disagreement when image and symptom findings differ
   - Flags uncertainty when image confidence (< 60%) or symptom match is low
+  - Carries forward `modelValidated` / `trainingData` so the UI never presents
+    unvalidated synthetic-demo outputs as confirmed diagnostics.
 """
 
 from typing import Any, Dict, List, Optional
@@ -16,30 +19,45 @@ def evaluate_combined_decision(
     image_result: Optional[Dict[str, Any]] = None,
     symptom_result: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """
-    Combine `image_result` (from MobileNetV2) and `symptom_result` (from rule engine)
-    into a unified screening decision with agreement and uncertainty metadata.
-    """
     animal_name = (animal_id or "cow").strip().capitalize()
 
     # Mode 1: Both Image and Symptoms provided
     if image_result and symptom_result:
+        img_ood = bool(image_result.get("isOutOfDistribution"))
         img_class = image_result.get("predictedClass")
         img_label = image_result.get("predictedLabel", "Unknown")
         img_conf = float(image_result.get("confidence") or 0.0)
         img_low_conf = bool(image_result.get("isLowConfidence", img_conf < 60.0))
+        model_validated = bool(image_result.get("modelValidated", False))
+        training_data = image_result.get("trainingData", "unknown")
 
         sym_cond_id = symptom_result.get("topConditionId")
         sym_cond_name = symptom_result.get("topCondition", "Non-Specific Clinical Signs")
         sym_score = float(symptom_result.get("matchScorePercent") or 0.0)
 
-        # Merge prevention tips without duplicates
         merged_tips: List[str] = []
-        for tip in (image_result.get("preventionTips") or []) + (symptom_result.get("preventionTips") or []):
+        for tip in (symptom_result.get("preventionTips") or []) + (image_result.get("preventionTips") or []):
             if tip not in merged_tips:
                 merged_tips.append(tip)
 
-        # Case A: Image and Symptoms agree on LSD or FMD
+        if img_ood:
+            return {
+                "mode": "combined",
+                "animal": animal_name,
+                "finalConclusion": f"Symptom Indication Only: {sym_cond_name} (Image Unsuitable)",
+                "agreementStatus": "Image Unsuitable — Relying on Symptoms Only",
+                "combinedConfidence": round(sym_score, 1),
+                "isUncertain": True,
+                "hasConflict": False,
+                "modelValidated": model_validated,
+                "trainingData": training_data,
+                "explanation": (
+                    f"The uploaded image could not be classified ({image_result.get('uncertaintyNotice')}). "
+                    f"Symptom analysis reported '{sym_cond_name}' ({sym_score}% match)."
+                ),
+                "preventionTips": symptom_result.get("preventionTips") or [],
+            }
+
         if img_class == sym_cond_id and not img_low_conf and sym_score >= 45.0:
             combined_score = round(0.55 * img_conf + 0.45 * sym_score, 1)
             return {
@@ -48,17 +66,22 @@ def evaluate_combined_decision(
                 "finalConclusion": f"Consistent Indication: {img_label}",
                 "agreementStatus": "Agreement (Image & Symptoms Consistent)",
                 "combinedConfidence": combined_score,
-                "isUncertain": False,
+                "isUncertain": not model_validated,
                 "hasConflict": False,
+                "modelValidated": model_validated,
+                "trainingData": training_data,
                 "explanation": (
-                    f"Both MobileNetV2 image analysis ({img_label} at {img_conf}%) and clinical symptom rules "
-                    f"({sym_cond_name} at {sym_score}%) independently support {img_label}. "
-                    "Immediate isolation and veterinary confirmation are recommended."
+                    f"Image output ({img_label} at {img_conf}%) and symptom rules "
+                    f"({sym_cond_name} at {sym_score}%) both point to {img_label}. "
+                    + (
+                        "Note: the image model is not validated on real animals; rely on the clinical symptoms and consult a veterinarian."
+                        if not model_validated
+                        else "Consult a veterinarian for confirmation."
+                    )
                 ),
                 "preventionTips": merged_tips,
             }
 
-        # Case B: Direct disagreement / conflict between image and symptoms
         if (
             sym_cond_id not in ("inconclusive", None)
             and img_class != sym_cond_id
@@ -73,16 +96,16 @@ def evaluate_combined_decision(
                 "combinedConfidence": combined_score,
                 "isUncertain": True,
                 "hasConflict": True,
+                "modelValidated": model_validated,
+                "trainingData": training_data,
                 "explanation": (
-                    f"Disagreement detected: MobileNetV2 image screening indicates '{img_label}' ({img_conf}%), "
+                    f"Disagreement detected: image output indicates '{img_label}' ({img_conf}%), "
                     f"whereas reported symptoms match '{sym_cond_name}' ({sym_score}%). "
-                    "Because visual appearance and clinical symptoms conflict, this screening is inconclusive. "
-                    "Do not rely on automated output alone—consult a veterinarian for physical examination."
+                    "Treat this screening as inconclusive and consult a veterinarian."
                 ),
                 "preventionTips": merged_tips,
             }
 
-        # Case C: Low image confidence or non-specific symptoms
         combined_score = round(0.5 * img_conf + 0.5 * sym_score, 1)
         return {
             "mode": "combined",
@@ -92,39 +115,61 @@ def evaluate_combined_decision(
             "combinedConfidence": combined_score,
             "isUncertain": True,
             "hasConflict": False,
+            "modelValidated": model_validated,
+            "trainingData": training_data,
             "explanation": (
-                f"Image screening reported '{img_label}' ({img_conf}% confidence) and symptom checking reported "
-                f"'{sym_cond_name}' ({sym_score}% match). Because at least one source has low or non-specific confidence, "
-                "treat this result as uncertain and seek veterinary advice."
+                f"Image output reported '{img_label}' ({img_conf}%) and symptoms reported "
+                f"'{sym_cond_name}' ({sym_score}%). Evidence is partial or low-confidence; seek veterinary advice."
             ),
             "preventionTips": merged_tips,
         }
 
     # Mode 2: Image-Only Screening
     if image_result:
+        img_ood = bool(image_result.get("isOutOfDistribution"))
         img_label = image_result.get("predictedLabel", "Unknown")
         img_conf = float(image_result.get("confidence") or 0.0)
         img_low_conf = bool(image_result.get("isLowConfidence", img_conf < 60.0))
+        model_validated = bool(image_result.get("modelValidated", False))
+        training_data = image_result.get("trainingData", "unknown")
+
+        if img_ood:
+            return {
+                "mode": "image_only",
+                "animal": animal_name,
+                "finalConclusion": "Uncertain / Unsuitable Image",
+                "agreementStatus": "Out-of-Distribution / Blank Image Rejected",
+                "combinedConfidence": 0.0,
+                "isUncertain": True,
+                "hasConflict": False,
+                "modelValidated": model_validated,
+                "trainingData": training_data,
+                "explanation": image_result.get("uncertaintyNotice") or "Image could not be classified.",
+                "preventionTips": image_result.get("preventionTips") or [],
+            }
+
         return {
             "mode": "image_only",
             "animal": animal_name,
             "finalConclusion": (
-                f"Uncertain Image Screening ({img_label})"
+                f"Uncertain Image Output ({img_label})"
                 if img_low_conf
-                else f"Image-Based Indication: {img_label}"
+                else f"Demo Image Output: {img_label}"
             ),
             "agreementStatus": (
                 "Low Image Confidence (Symptom Check Recommended)"
                 if img_low_conf
-                else "Image-Only Screening (No Symptoms Provided)"
+                else ("Demo Model Output — Not Clinically Validated" if not model_validated else "Image-Only Screening")
             ),
             "combinedConfidence": round(img_conf, 1),
-            "isUncertain": img_low_conf,
+            "isUncertain": img_low_conf or (not model_validated),
             "hasConflict": False,
+            "modelValidated": model_validated,
+            "trainingData": training_data,
             "explanation": (
                 image_result.get("uncertaintyNotice")
-                or f"Based on visual features alone, MobileNetV2 classified the photo as {img_label} ({img_conf}% confidence). "
-                "Adding clinical symptoms can help cross-check this visual screening."
+                or f"MobileNetV2 demo output leaned toward {img_label} ({img_conf}%). "
+                "Because this image model is not validated on real animals, always cross-check with symptoms and a veterinarian."
             ),
             "preventionTips": image_result.get("preventionTips") or [],
         }

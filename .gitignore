@@ -12,6 +12,7 @@ venv/
 backend/venv/
 backend/.venv/
 *.egg-info/
+.pytest_cache/
 
 # Database & Uploads
 *.db
@@ -19,16 +20,13 @@ backend/.venv/
 backend/uploads/*
 !backend/uploads/.gitkeep
 
-# ML dataset & temporary files
+# ML dataset & generated model artefacts
 ml/dataset/*
 !ml/dataset/.gitkeep
 !ml/dataset/README.md
 !ml/dataset/class_indices.json
 ml/saved_models/*
 !ml/saved_models/.gitkeep
-!ml/saved_models/model_architecture.json
-!ml/saved_models/training_history.json
-!ml/saved_models/evaluation_metrics.json
 
 # Environment variables & IDE
 .env

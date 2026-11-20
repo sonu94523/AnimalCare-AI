@@ -1,38 +1,52 @@
 """
-MobileNetV2 Image Inference Service for Cow & Buffalo Disease Screening.
+MobileNetV2 image inference service (fail-closed).
 
-Loads the trained MobileNetV2 transfer learning checkpoint and runs 224x224 RGB
-inference, returning class probabilities, top prediction, confidence score,
-honest low-confidence uncertainty warnings (< 60%), and preventive care tips.
+- Never trains a model inside an HTTP request. If the checkpoint is missing or
+  corrupted, raises `ModelUnavailableError` so the API returns HTTP 503.
+- Guards singleton model loading with a `threading.Lock`.
+- Rejects blank / uniform / near-zero-detail images (e.g. solid black or solid
+  white) before classification so they never receive a confident disease label
+  or quarantine advice.
+- Clearly marks predictions with `trainingData`, `modelValidated`, and a
+  non-diagnostic status note.
 """
 
+import json
+import logging
 import os
-import sys
-from typing import Any, Dict, Optional, Union
+import threading
+from typing import Any, Dict, Optional, Tuple, Union
 
-BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PROJECT_ROOT = os.path.dirname(BACKEND_DIR)
-if PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, PROJECT_ROOT)
+import numpy as np
 
-from ml.evaluate import LOW_CONFIDENCE_THRESHOLD
-from ml.model import DEFAULT_SAVED_MODELS_DIR, MobileNetV2DiseaseModel
+from ml.constants import DEFAULT_SAVED_MODELS_DIR, LOW_CONFIDENCE_THRESHOLD, MODEL_STATUS_NOTE
+from ml.model import MobileNetV2DiseaseModel, weights_path_for
 from ml.preprocessing import (
     CLASS_DISPLAY_NAMES,
-    CLASS_NAMES,
-    DEFAULT_DATASET_DIR,
     IMAGE_SIZE,
     SUPPORTED_ANIMALS,
-    preprocess_image,
+    load_rgb_image,
+    normalize_pixels,
 )
-from ml.train import train_and_save_model
 
-_MODEL_INSTANCE: Optional[MobileNetV2DiseaseModel] = None
+logger = logging.getLogger(__name__)
+
+# Images whose per-channel pixel standard deviation (on 0..255 scale) is below
+# this threshold have almost no visual texture (e.g. solid black/white frames).
+MIN_IMAGE_STD_THRESHOLD = 5.0
+
+_MODEL_LOCK = threading.Lock()
+_MODEL_CACHE: Dict[str, Tuple[float, MobileNetV2DiseaseModel]] = {}
+
+
+class ModelUnavailableError(RuntimeError):
+    """Raised when no valid trained MobileNetV2 checkpoint is available."""
+
 
 CONDITION_GUIDANCE: Dict[str, Dict[str, Any]] = {
     "healthy": {
         "diseaseSlug": "healthy",
-        "summary": "No visual signs of Lumpy Skin Disease or Foot-and-Mouth Disease nodules/blisters detected.",
+        "summary": "Demo image output leaned toward the Healthy class (not clinically validated).",
         "prevention": [
             "Continue balanced nutrition, clean drinking water, and dry shelter hygiene.",
             "Follow routine regional vaccination schedules for LSD and FMD.",
@@ -41,57 +55,106 @@ CONDITION_GUIDANCE: Dict[str, Dict[str, Any]] = {
     },
     "lumpy_skin_disease": {
         "diseaseSlug": "lsd",
-        "summary": "Visual features resemble nodular skin lesions associated with Lumpy Skin Disease (LSD).",
+        "summary": "Demo image output leaned toward Lumpy Skin Disease (not clinically validated; verify with symptoms and a veterinarian).",
         "prevention": [
-            "Immediately isolate the affected animal from the rest of the herd.",
+            "If clinical signs (firm skin nodules, fever) are actually present, isolate the animal and contact a veterinarian.",
             "Control blood-feeding insect vectors (mosquitoes, biting flies, ticks) in sheds.",
-            "Disinfect equipment and contact a veterinarian for confirmatory diagnosis.",
+            "Do not act on this unvalidated demo image score alone; report suspected notifiable disease to local veterinary authorities.",
         ],
     },
     "foot_and_mouth_disease": {
         "diseaseSlug": "fmd",
-        "summary": "Visual features resemble blister/vesicle lesions associated with Foot-and-Mouth Disease (FMD).",
+        "summary": "Demo image output leaned toward Foot-and-Mouth Disease (not clinically validated; verify with symptoms and a veterinarian).",
         "prevention": [
-            "Strictly quarantine the animal and restrict livestock movement.",
-            "Disinfect feeding troughs, footbaths, and footwear immediately.",
-            "Contact a local veterinary officer for examination and supportive care.",
+            "If clinical signs (mouth/hoof blisters, excessive salivation, lameness) are actually present, isolate the animal and consult a veterinary officer immediately.",
+            "Maintain routine footbath and equipment hygiene.",
+            "Do not act on this unvalidated demo image score alone; report suspected FMD to local veterinary authorities.",
         ],
     },
 }
 
+UNSUITABLE_IMAGE_GUIDANCE = [
+    "Upload a clear, well-lit photograph showing the animal's skin, muzzle, or hooves.",
+    "Use the Symptom Checker to record observed clinical signs.",
+    "Consult a qualified veterinarian for any suspected illness.",
+]
 
-def get_trained_model() -> MobileNetV2DiseaseModel:
-    """Return a singleton MobileNetV2DiseaseModel loaded with trained weights."""
-    global _MODEL_INSTANCE
-    if _MODEL_INSTANCE is not None:
-        return _MODEL_INSTANCE
 
-    model = MobileNetV2DiseaseModel(
-        num_classes=len(CLASS_NAMES),
-        freeze_base=True,
-        pretrained=False,
-    )
-    loaded = model.load_weights(saved_models_dir=DEFAULT_SAVED_MODELS_DIR)
-    if not loaded:
-        train_and_save_model(
-            dataset_root=DEFAULT_DATASET_DIR,
-            saved_models_dir=DEFAULT_SAVED_MODELS_DIR,
-            epochs=8,
+def clear_model_cache() -> None:
+    """Clear the cached model instances (useful in tests)."""
+    with _MODEL_LOCK:
+        _MODEL_CACHE.clear()
+
+
+def is_model_available(models_dir: str = DEFAULT_SAVED_MODELS_DIR) -> bool:
+    return os.path.isfile(weights_path_for(models_dir))
+
+
+def get_trained_model(models_dir: str = DEFAULT_SAVED_MODELS_DIR) -> MobileNetV2DiseaseModel:
+    """Load the saved checkpoint under a thread lock; fail closed if missing."""
+    ckpt_path = weights_path_for(models_dir)
+    if not os.path.isfile(ckpt_path):
+        raise ModelUnavailableError(
+            "Image classification model weights are not installed. "
+            "Train a checkpoint first with `python -m ml.train`."
         )
-        model.load_weights(saved_models_dir=DEFAULT_SAVED_MODELS_DIR)
 
-    _MODEL_INSTANCE = model
-    return _MODEL_INSTANCE
+    mtime = os.path.getmtime(ckpt_path)
+    with _MODEL_LOCK:
+        cached = _MODEL_CACHE.get(ckpt_path)
+        if cached is not None and cached[0] == mtime:
+            return cached[1]
+        try:
+            model = MobileNetV2DiseaseModel.from_checkpoint(ckpt_path)
+        except (OSError, ValueError, RuntimeError, KeyError) as exc:
+            logger.error("Failed to load model checkpoint %s: %s", ckpt_path, exc)
+            raise ModelUnavailableError(
+                f"Model checkpoint at {os.path.basename(ckpt_path)} could not be loaded. "
+                "Retrain with `python -m ml.train`."
+            ) from exc
+        _MODEL_CACHE[ckpt_path] = (mtime, model)
+        return model
+
+
+def _read_class_display_order(model: MobileNetV2DiseaseModel, dataset_dir: Optional[str] = None) -> list:
+    """Use class order from checkpoint, cross-checked against class_indices.json if present."""
+    if dataset_dir:
+        ci_path = os.path.join(dataset_dir, "class_indices.json")
+        if os.path.isfile(ci_path):
+            try:
+                with open(ci_path, "r", encoding="utf-8") as f:
+                    mapping = json.load(f).get("class_indices", {})
+                if isinstance(mapping, dict) and len(mapping) == len(model.class_names):
+                    ordered = [k for k, _ in sorted(mapping.items(), key=lambda kv: kv[1])]
+                    if ordered != model.class_names:
+                        logger.warning(
+                            "class_indices.json order %s differs from checkpoint order %s; using checkpoint order.",
+                            ordered,
+                            model.class_names,
+                        )
+            except (OSError, json.JSONDecodeError) as exc:
+                logger.warning("Could not read class_indices.json: %s", exc)
+    return list(model.class_names)
+
+
+def _check_visual_suitability(rgb_array: np.ndarray) -> Optional[str]:
+    """Basic out-of-distribution guard rejecting solid/blank/uniform frames."""
+    pixel_std = float(rgb_array.std())
+    if pixel_std < MIN_IMAGE_STD_THRESHOLD:
+        return (
+            f"Image has almost no visual detail (pixel std = {pixel_std:.2f}, e.g. solid black, "
+            "solid white, or blank frame) and cannot be classified as an animal photograph."
+        )
+    return None
 
 
 def predict_disease_from_image(
-    image_source: Union[str, bytes],
+    image_source: Union[str, os.PathLike, bytes],
     animal_id: str = "cow",
+    models_dir: str = DEFAULT_SAVED_MODELS_DIR,
+    dataset_dir: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """
-    Preprocess an uploaded Cow or Buffalo image to (1, 224, 224, 3) and run
-    MobileNetV2 classification.
-    """
+    """Run MobileNetV2 inference with fail-closed loading and OOD blank-image screening."""
     normalized_animal = (animal_id or "cow").strip().lower()
     if normalized_animal not in SUPPORTED_ANIMALS:
         raise ValueError(
@@ -99,18 +162,46 @@ def predict_disease_from_image(
             "Only Cow and Buffalo are supported."
         )
 
-    tensor = preprocess_image(
-        image_source,
-        target_size=IMAGE_SIZE,
-        normalization="mobilenet_v2",
-        expand_dims=True,
-    )
+    model = get_trained_model(models_dir=models_dir)
+    class_names = _read_class_display_order(model, dataset_dir=dataset_dir)
 
-    model = get_trained_model()
-    probs = model.predict_proba(tensor)[0]  # shape (3,)
+    pil_img = load_rgb_image(image_source, target_size=IMAGE_SIZE)
+    rgb_array = np.asarray(pil_img, dtype=np.float32)
+
+    ood_reason = _check_visual_suitability(rgb_array)
+    if ood_reason is not None:
+        return {
+            "animalId": normalized_animal,
+            "predictedClass": "uncertain",
+            "predictedLabel": "Uncertain / Unsuitable Image",
+            "imagePrediction": "Uncertain / Unsuitable Image (Not an Animal Photo)",
+            "confidence": 0.0,
+            "isLowConfidence": True,
+            "isOutOfDistribution": True,
+            "lowConfidenceThreshold": LOW_CONFIDENCE_THRESHOLD,
+            "uncertaintyNotice": ood_reason,
+            "classProbabilities": [
+                {
+                    "classId": cname,
+                    "label": CLASS_DISPLAY_NAMES.get(cname, cname),
+                    "probabilityPercent": 0.0,
+                }
+                for cname in class_names
+            ],
+            "summary": ood_reason,
+            "preventionTips": UNSUITABLE_IMAGE_GUIDANCE,
+            "modelBackbone": "MobileNetV2",
+            "trainingData": model.training_data,
+            "modelValidated": False,
+            "modelStatusNote": MODEL_STATUS_NOTE,
+            "inputShape": [1, IMAGE_SIZE[1], IMAGE_SIZE[0], 3],
+        }
+
+    tensor = np.expand_dims(normalize_pixels(rgb_array, mode=model.normalization), axis=0)
+    probs = model.predict_proba(tensor)[0]
 
     top_idx = int(probs.argmax())
-    predicted_class = CLASS_NAMES[top_idx]
+    predicted_class = class_names[top_idx]
     predicted_label = CLASS_DISPLAY_NAMES.get(predicted_class, predicted_class)
     confidence_percent = round(float(probs[top_idx]) * 100.0, 2)
     is_low_confidence = confidence_percent < LOW_CONFIDENCE_THRESHOLD
@@ -121,7 +212,7 @@ def predict_disease_from_image(
             "label": CLASS_DISPLAY_NAMES.get(cname, cname),
             "probabilityPercent": round(float(probs[idx]) * 100.0, 2),
         }
-        for idx, cname in enumerate(CLASS_NAMES)
+        for idx, cname in enumerate(class_names)
     ]
 
     guidance = CONDITION_GUIDANCE.get(predicted_class, CONDITION_GUIDANCE["healthy"])
@@ -129,11 +220,10 @@ def predict_disease_from_image(
         display_prediction = f"Uncertain / Low Confidence ({predicted_label})"
         uncertainty_notice = (
             f"Model confidence ({confidence_percent}%) is below the {LOW_CONFIDENCE_THRESHOLD}% "
-            "reliability threshold. Image features are ambiguous—please use the Symptom Checker "
-            "and consult a qualified veterinarian."
+            "threshold. Please use the Symptom Checker and consult a qualified veterinarian."
         )
     else:
-        display_prediction = predicted_label
+        display_prediction = f"{predicted_label} (Demo Model — Not Validated)"
         uncertainty_notice = None
 
     return {
@@ -143,11 +233,15 @@ def predict_disease_from_image(
         "imagePrediction": display_prediction,
         "confidence": confidence_percent,
         "isLowConfidence": is_low_confidence,
+        "isOutOfDistribution": False,
         "lowConfidenceThreshold": LOW_CONFIDENCE_THRESHOLD,
         "uncertaintyNotice": uncertainty_notice,
         "classProbabilities": class_probabilities,
         "summary": guidance["summary"],
         "preventionTips": guidance["prevention"],
         "modelBackbone": "MobileNetV2",
+        "trainingData": model.training_data,
+        "modelValidated": False,
+        "modelStatusNote": MODEL_STATUS_NOTE,
         "inputShape": list(tensor.shape),
     }

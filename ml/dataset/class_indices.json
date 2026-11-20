@@ -17,5 +17,5 @@
     224,
     224
   ],
-  "normalization": "mobilenet_v2 ([-1.0, 1.0])"
+  "normalization": "imagenet mean/std"
 }
