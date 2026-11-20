@@ -102,13 +102,22 @@ function Results() {
           {Array.isArray(resultData.classProbabilities) && resultData.classProbabilities.length > 0 && (
             <div className="result-subsection" style={{ marginBottom: '1rem' }}>
               <h4>MobileNetV2 Class Probability Breakdown</h4>
-              <ul className="result-list">
+              <div className="prob-list">
                 {resultData.classProbabilities.map((item) => (
-                  <li key={item.classId}>
-                    <strong>{item.label}:</strong> {item.probabilityPercent}%
-                  </li>
+                  <div key={item.classId} className="prob-item">
+                    <div className="prob-item-header">
+                      <span>{item.label}</span>
+                      <span>{item.probabilityPercent}%</span>
+                    </div>
+                    <div className="prob-bar-track">
+                      <div
+                        className="prob-bar-fill"
+                        style={{ width: `${Math.min(100, Math.max(0, item.probabilityPercent))}%` }}
+                      />
+                    </div>
+                  </div>
                 ))}
-              </ul>
+              </div>
             </div>
           )}
 
@@ -134,14 +143,25 @@ function Results() {
           {Array.isArray(resultData.matchedConditions) && resultData.matchedConditions.length > 0 && (
             <div className="result-subsection" style={{ marginBottom: '1rem' }}>
               <h4>Rule-Based Condition Matches</h4>
-              <ul className="result-list">
+              <div className="prob-list">
                 {resultData.matchedConditions.map((cond) => (
-                  <li key={cond.conditionId}>
-                    <strong>{cond.conditionName}:</strong> {cond.matchScorePercent}% match (
-                    {cond.matchedSymptomCount} symptom{cond.matchedSymptomCount === 1 ? '' : 's'})
-                  </li>
+                  <div key={cond.conditionId} className="prob-item">
+                    <div className="prob-item-header">
+                      <span>
+                        {cond.conditionName} ({cond.matchedSymptomCount} symptom
+                        {cond.matchedSymptomCount === 1 ? '' : 's'})
+                      </span>
+                      <span>{cond.matchScorePercent}%</span>
+                    </div>
+                    <div className="prob-bar-track">
+                      <div
+                        className="prob-bar-fill"
+                        style={{ width: `${Math.min(100, Math.max(0, cond.matchScorePercent))}%` }}
+                      />
+                    </div>
+                  </div>
                 ))}
-              </ul>
+              </div>
             </div>
           )}
 

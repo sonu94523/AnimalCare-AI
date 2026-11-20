@@ -62,6 +62,65 @@ function ImageDetection() {
     setPreviewUrl(URL.createObjectURL(file))
   }
 
+  const handleLoadSampleDemoImage = (sampleType) => {
+    setErrorMsg('')
+    setSuccessMsg('')
+    setUploadedInfo(null)
+    setPredictionResult(null)
+
+    const canvas = document.createElement('canvas')
+    canvas.width = 224
+    canvas.height = 224
+    const ctx = canvas.getContext('2d')
+
+    if (sampleType === 'healthy') {
+      ctx.fillStyle = 'rgb(90, 155, 85)'
+      ctx.fillRect(0, 0, 224, 224)
+    } else if (sampleType === 'lsd') {
+      ctx.fillStyle = 'rgb(165, 110, 80)'
+      ctx.fillRect(0, 0, 224, 224)
+      ctx.fillStyle = 'rgb(107, 71, 52)'
+      const spots = [
+        [45, 55, 11],
+        [95, 70, 12],
+        [150, 60, 10],
+        [70, 130, 13],
+        [135, 140, 12],
+        [175, 120, 9],
+        [60, 180, 10],
+        [120, 185, 11]
+      ]
+      spots.forEach(([x, y, r]) => {
+        ctx.beginPath()
+        ctx.arc(x, y, r, 0, Math.PI * 2)
+        ctx.fill()
+      })
+    } else {
+      ctx.fillStyle = 'rgb(180, 95, 95)'
+      ctx.fillRect(0, 0, 224, 224)
+      ctx.fillStyle = 'rgb(235, 110, 110)'
+      const patches = [
+        [30, 40, 35, 16],
+        [90, 75, 38, 18],
+        [140, 50, 32, 15],
+        [55, 135, 36, 18],
+        [125, 155, 34, 16]
+      ]
+      patches.forEach(([x, y, w, h]) => {
+        ctx.fillRect(x, y, w, h)
+      })
+    }
+
+    canvas.toBlob((blob) => {
+      if (!blob) return
+      const fname = `sample_${currentAnimal.id}_${sampleType}.png`
+      const demoFile = new File([blob], fname, { type: 'image/png' })
+      setSelectedFile(demoFile)
+      setPreviewUrl(URL.createObjectURL(demoFile))
+      setSuccessMsg(`Loaded sample ${sampleType.toUpperCase()} test image (${fname}). Click "Upload & View Screening Result" below.`)
+    }, 'image/png')
+  }
+
   const handleUploadImage = async () => {
     if (!currentAnimal.aiSupported) {
       setErrorMsg(`AI image detection is not available for ${currentAnimal.name}.`)
@@ -222,6 +281,38 @@ function ImageDetection() {
           </div>
         ) : (
           <form onSubmit={handleProceedToResults}>
+            <div className="sample-demo-box">
+              <p>
+                <strong>Quick Demo Test Images:</strong> Don&apos;t have a livestock photo handy? Load a pre-configured 224×224 test sample:
+              </p>
+              <div className="sample-demo-actions">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ padding: '0.4rem 0.75rem', fontSize: '0.85rem' }}
+                  onClick={() => handleLoadSampleDemoImage('healthy')}
+                >
+                  Load Healthy Sample
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ padding: '0.4rem 0.75rem', fontSize: '0.85rem' }}
+                  onClick={() => handleLoadSampleDemoImage('lsd')}
+                >
+                  Load Lumpy Skin (LSD) Sample
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ padding: '0.4rem 0.75rem', fontSize: '0.85rem' }}
+                  onClick={() => handleLoadSampleDemoImage('fmd')}
+                >
+                  Load Foot-and-Mouth (FMD) Sample
+                </button>
+              </div>
+            </div>
+
             <div className="form-group">
               <label htmlFor="image-upload">
                 Upload Animal Photograph (Allowed: JPG, JPEG, PNG | Max size: 5 MB)
